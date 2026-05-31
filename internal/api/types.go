@@ -123,6 +123,10 @@ type MatchDetails struct {
 
 	// Highlight video (if available)
 	Highlight *MatchHighlight `json:"highlight,omitempty"` // Official highlight video link
+
+	// Aggregate score (two-legged knockout ties only)
+	AggregateScore     string `json:"aggregate_score,omitempty"`      // e.g. "5 - 7"
+	WhoLostOnAggregate string `json:"who_lost_on_aggregate,omitempty"` // team name eliminated on aggregate
 }
 
 // MatchHighlight represents an official highlight video for a match

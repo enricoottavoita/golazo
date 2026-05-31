@@ -288,3 +288,49 @@ func TestGetParentLeagueID(t *testing.T) {
 		})
 	}
 }
+
+func TestToAPIMatchDetails_AggregateScore(t *testing.T) {
+	m := fotmobMatchDetails{}
+	m.Header.Status.Finished = boolPtr(true)
+	m.Header.AggregatedStr = "5 - 7"
+	m.Header.WhoLostOnAggregated = "Juventus"
+	m.Header.Teams = []struct {
+		ID    int    `json:"id"`
+		Name  string `json:"name"`
+		Score int    `json:"score"`
+	}{
+		{ID: 1, Name: "Galatasaray", Score: 5},
+		{ID: 2, Name: "Juventus", Score: 2},
+	}
+
+	got := m.toAPIMatchDetails()
+
+	if got.AggregateScore != "5 - 7" {
+		t.Errorf("AggregateScore = %q, want %q", got.AggregateScore, "5 - 7")
+	}
+	if got.WhoLostOnAggregate != "Juventus" {
+		t.Errorf("WhoLostOnAggregate = %q, want %q", got.WhoLostOnAggregate, "Juventus")
+	}
+}
+
+func TestToAPIMatchDetails_NoAggregateScore(t *testing.T) {
+	m := fotmobMatchDetails{}
+	m.Header.Status.Finished = boolPtr(true)
+	m.Header.Teams = []struct {
+		ID    int    `json:"id"`
+		Name  string `json:"name"`
+		Score int    `json:"score"`
+	}{
+		{ID: 1, Name: "Arsenal", Score: 2},
+		{ID: 2, Name: "Chelsea", Score: 1},
+	}
+
+	got := m.toAPIMatchDetails()
+
+	if got.AggregateScore != "" {
+		t.Errorf("AggregateScore = %q, want empty for non-knockout match", got.AggregateScore)
+	}
+	if got.WhoLostOnAggregate != "" {
+		t.Errorf("WhoLostOnAggregate = %q, want empty for non-knockout match", got.WhoLostOnAggregate)
+	}
+}
