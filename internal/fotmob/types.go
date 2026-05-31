@@ -142,7 +142,9 @@ type fotmobMatchDetails struct {
 			Name  string `json:"name"`
 			Score int    `json:"score"`
 		} `json:"teams"`
-		Status status `json:"status"`
+		Status              status `json:"status"`
+		AggregatedStr       string `json:"aggregatedStr,omitempty"`
+		WhoLostOnAggregated string `json:"whoLostOnAggregated,omitempty"`
 	} `json:"header"`
 	General struct {
 		MatchID  string `json:"matchId"`
@@ -449,6 +451,12 @@ func (m fotmobMatchDetails) toAPIMatchDetails() *api.MatchDetails {
 				}
 			}
 		}
+	}
+
+	// Aggregate score (two-legged knockout ties)
+	if m.Header.AggregatedStr != "" {
+		details.AggregateScore = m.Header.AggregatedStr
+		details.WhoLostOnAggregate = m.Header.WhoLostOnAggregated
 	}
 
 	// Convert events from content.matchFacts.events
