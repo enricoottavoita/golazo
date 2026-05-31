@@ -82,6 +82,11 @@ func RenderMatchDetails(cfg MatchDetailsConfig) (headerContent, scrollableConten
 	}
 	headerLines = append(headerLines, "")
 
+	// Aggregate score (two-legged knockout ties)
+	if details.AggregateScore != "" {
+		headerLines = append(headerLines, renderAggregateSection(details, contentWidth)...)
+	}
+
 	// Match context (detailed info)
 	headerLines = append(headerLines, renderMatchContext(details, contentWidth)...)
 
@@ -193,6 +198,38 @@ func renderMatchContext(details *api.MatchDetails, contentWidth int) []string {
 		lines = append(lines, neonLabelStyle.Render("Duration:    ")+neonValueStyle.Render("After Extra Time"))
 	}
 
+	return lines
+}
+
+func renderAggregateSection(details *api.MatchDetails, contentWidth int) []string {
+	var lines []string
+
+	aggHeader := lipgloss.NewStyle().
+		Foreground(neonCyan).
+		Bold(true).
+		Width(contentWidth).
+		Align(lipgloss.Center).
+		Render("AGG.")
+	lines = append(lines, aggHeader)
+
+	aggScore := lipgloss.NewStyle().
+		Foreground(neonCyan).
+		Bold(true).
+		Width(contentWidth).
+		Align(lipgloss.Center).
+		Render(details.AggregateScore)
+	lines = append(lines, aggScore)
+
+	if details.WhoLostOnAggregate != "" {
+		eliminated := lipgloss.NewStyle().
+			Foreground(neonDim).
+			Width(contentWidth).
+			Align(lipgloss.Center).
+			Render(details.WhoLostOnAggregate + " eliminated")
+		lines = append(lines, eliminated)
+	}
+
+	lines = append(lines, "")
 	return lines
 }
 
