@@ -10,8 +10,9 @@ import (
 func TestTeamLabel(t *testing.T) {
 	argFlag := FlagEmoji("ARG")
 	nedFlag := FlagEmoji("NED")
-	if argFlag == "" || nedFlag == "" {
-		t.Fatal("expected ARG/NED to have flag emojis registered")
+	ausFlag := FlagEmoji("AUS")
+	if argFlag == "" || nedFlag == "" || ausFlag == "" {
+		t.Fatal("expected ARG/NED/AUS to have flag emojis registered")
 	}
 
 	tests := []struct {
@@ -53,6 +54,11 @@ func TestTeamLabel(t *testing.T) {
 			name: "name override is case-insensitive",
 			team: api.Team{Name: "NETHERLANDS"},
 			want: nedFlag + " NED",
+		},
+		{
+			name: "short name longer than 3 chars is truncated",
+			team: api.Team{Name: "Australia", ShortName: "AUST"},
+			want: ausFlag + " AUS", // "AUST" → "AUS" → flag resolves
 		},
 	}
 

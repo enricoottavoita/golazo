@@ -40,19 +40,25 @@ func MatchupTeamLabel(short, full string, tbd bool) string {
 }
 
 // teamCode resolves a team to its canonical 3-letter code using the chain
-// described on TeamLabel.
+// described on TeamLabel. The returned code is always truncated to at most
+// three characters so every WC view renders teams in the same column width.
 func teamCode(short, full string) string {
 	if c := strings.ToUpper(strings.TrimSpace(short)); c != "" {
-		return c
+		return capCode(c)
 	}
 	if c, ok := wcNameToCode[strings.ToLower(strings.TrimSpace(full))]; ok {
-		return c
+		return capCode(c)
 	}
 	stripped := strings.ToUpper(strings.ReplaceAll(full, " ", ""))
-	if len(stripped) > 3 {
-		stripped = stripped[:3]
+	return capCode(stripped)
+}
+
+// capCode enforces the 3-letter cap shared by every code-resolution branch.
+func capCode(c string) string {
+	if len(c) > 3 {
+		return c[:3]
 	}
-	return stripped
+	return c
 }
 
 // labelWithFlag renders "<emoji> <CODE>", padding the emoji slot with two
