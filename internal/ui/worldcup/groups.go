@@ -109,9 +109,6 @@ func RenderGroupsList(width, height int, wcData *api.WorldCupData, groupsList li
 		phaseHint = lipgloss.NewStyle().Foreground(colorGold).Render("  " + phase)
 	}
 
-	keyHints := []string{"  b: Knockout Bracket", "  g: Groups Grid"}
-	tabHint := lipgloss.NewStyle().Foreground(colorDim).Render(strings.Join(keyHints, "  "))
-
 	help := HelpStyle.Width(width).Render("↑/↓: navigate  Enter: detail  b: bracket  g: grid  /: filter  Esc: back  q: quit")
 
 	overhead := 4
@@ -132,7 +129,7 @@ func RenderGroupsList(width, height int, wcData *api.WorldCupData, groupsList li
 	if phaseHint != "" {
 		parts = append(parts, phaseHint)
 	}
-	parts = append(parts, tabHint, "", groupsList.View(), help)
+	parts = append(parts, "", groupsList.View(), help)
 
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
