@@ -38,10 +38,10 @@ func TestHandleWCGroupGridKeys_UTransitionsToUpcoming(t *testing.T) {
 	}
 }
 
-func TestHandleWCGroupGridKeys_LTransitionsToGroupsList(t *testing.T) {
+func TestHandleWCGroupGridKeys_TTransitionsToGroupsList(t *testing.T) {
 	m := newWCTestModel()
 
-	next, _ := m.handleWCGroupGridKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	next, _ := m.handleWCGroupGridKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
 
 	nm := next.(model)
 	if nm.wcSubView != wcSubViewGroups {

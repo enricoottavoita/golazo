@@ -288,7 +288,7 @@ func RenderGroupGrid(width, height int, wcData *api.WorldCupData, selectedGroupI
 	}
 
 	header := design.RenderHeader(wcData.Name+" — Groups Overview", width-2)
-	help := HelpStyle.Width(width).Render("↑/↓/←/→: navigate  Enter: detail  b: bracket  L: list  u: upcoming  Esc: back  q: quit")
+	help := HelpStyle.Width(width).Render("↑/↓/←/→: navigate  Enter: detail  b: bracket  t: table  u: upcoming  Esc: back  q: quit")
 
 	cols := 2
 	if width > 120 {
