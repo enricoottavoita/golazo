@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.26.0] - 2026-06-10
+
+### Added
 - **World Cup View** - New top-level view for the FIFA World Cup with a group-grid overview as the default sub-view, scrollable groups list (`t`), per-group detail, knockout bracket (`b`), and upcoming matches for the next 4 days (`u`). Flag emojis prefix team names across the grid, group detail, and upcoming views.
 
 ### Changed
