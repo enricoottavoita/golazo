@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Fixed
+- **Update Noop** - `golazo --update` now skips the Homebrew/install-script call when the running binary is already on the latest GitHub release (or is a dev build), printing an informative message instead of reinstalling. Network failures while checking the latest version still fall through to today's install behavior.
 - **Debug Log Hint** - The `--debug` banner and `--debug` flag help now display the platform-correct log path (`~/.config/golazo/golazo_debug.log` on Linux per XDG, `~/.golazo/golazo_debug.log` on macOS/Windows) instead of a hardcoded macOS path.
 - **World Cup Hints** - Removed a redundant tab hint above the groups list so each sub-view shows a single, accurate help line.
 
