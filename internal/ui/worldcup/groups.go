@@ -177,20 +177,19 @@ func renderGroupStandingsTable(g api.WCGroup, width int) string {
 		return LoadingStyle.Render("No standings data")
 	}
 
-	// Col widths: # (3) + 2sp + emoji (2) + 1sp + Team (nameW) + P(4)+W(4)+D(4)+L(4)+GF(4)+GA(4)+GD(5)+Pts(4) = nameW + 42
-	const emojiW = 3
-	nameW := width - 42 - emojiW
-	if nameW < 8 {
-		nameW = 8
+	// Col widths: # (3) + 2sp + Team (nameW, includes 3-wide flag prefix) +
+	// P(4)+W(4)+D(4)+L(4)+GF(4)+GA(4)+GD(5)+Pts(4) = nameW + 42
+	nameW := width - 42
+	if nameW < 11 {
+		nameW = 11
 	}
-	if nameW > 20 {
-		nameW = 20
+	if nameW > 23 {
+		nameW = 23
 	}
 
 	hdr := lipgloss.JoinHorizontal(lipgloss.Top,
 		HeaderStyle.Width(3).Align(lipgloss.Right).Render("#"),
 		"  ",
-		HeaderStyle.Width(emojiW).Render(""),
 		HeaderStyle.Width(nameW).Render("Team"),
 		HeaderStyle.Width(4).Align(lipgloss.Right).Render("P"),
 		HeaderStyle.Width(4).Align(lipgloss.Right).Render("W"),
@@ -202,17 +201,13 @@ func renderGroupStandingsTable(g api.WCGroup, width int) string {
 		HeaderStyle.Width(4).Align(lipgloss.Right).Render("Pts"),
 	)
 
-	sepWidth := 3 + 2 + emojiW + nameW + 4 + 4 + 4 + 4 + 4 + 4 + 5 + 4
+	sepWidth := 3 + 2 + nameW + 4 + 4 + 4 + 4 + 4 + 4 + 5 + 4
 	sep := SepStyle.Render(strings.Repeat("─", sepWidth))
 
 	lines := []string{hdr, sep}
 	for i, t := range g.Teams {
-		name := t.Team.Name
-		if len(name) > nameW {
-			name = name[:nameW-1] + "…"
-		}
-
 		emoji := FlagEmoji(t.Team.ShortName)
+		teamLabel := teamNameWithFlag(emoji, t.Team.Name, nameW)
 
 		var teamStyle, ptsStyle lipgloss.Style
 		switch {
@@ -232,8 +227,7 @@ func renderGroupStandingsTable(g api.WCGroup, width int) string {
 		row := lipgloss.JoinHorizontal(lipgloss.Top,
 			alignRight(3, fmt.Sprintf("%d", t.Position)),
 			"  ",
-			lipgloss.NewStyle().Width(emojiW).Render(emoji),
-			teamStyle.Width(nameW).Render(name),
+			teamStyle.Render(teamLabel),
 			alignRight(4, fmt.Sprintf("%d", t.Played)),
 			alignRight(4, fmt.Sprintf("%d", t.Won)),
 			alignRight(4, fmt.Sprintf("%d", t.Drawn)),
@@ -247,6 +241,38 @@ func renderGroupStandingsTable(g api.WCGroup, width int) string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// teamNameWithFlag returns "<emoji> <name>" padded to colW visual cells.
+// Emoji takes a fixed 3-cell prefix slot so rows align even when some teams
+// lack a flag mapping. The name is truncated with an ellipsis when it would
+// overflow the column.
+func teamNameWithFlag(emoji, name string, colW int) string {
+	const flagSlot = 3 // visual cells reserved for emoji + trailing space
+	nameSpace := colW - flagSlot
+	if nameSpace < 1 {
+		nameSpace = 1
+	}
+	if lipgloss.Width(name) > nameSpace {
+		// Truncate by rune to avoid splitting multi-byte chars.
+		runes := []rune(name)
+		for nameSpace > 0 && lipgloss.Width(string(runes[:nameSpace])+"…") > nameSpace {
+			nameSpace--
+		}
+		if nameSpace > 0 {
+			name = string(runes[:nameSpace]) + "…"
+		} else {
+			name = "…"
+		}
+	}
+	prefix := emoji
+	if emoji == "" {
+		prefix = "  "
+	} else {
+		prefix = emoji + " "
+	}
+	combined := prefix + name
+	return lipgloss.PlaceHorizontal(colW, lipgloss.Left, combined)
 }
 
 // renderQualificationRow renders a compact one-line summary of qualified teams.
@@ -343,12 +369,12 @@ func renderGroupGridCell(g api.WCGroup, width int) string {
 	title := GridGroupHeaderStyle.Render(g.Name)
 	lines := []string{title}
 	for i, t := range g.Teams {
-		name := t.Team.ShortName
-		if name == "" {
-			name = t.Team.Name
+		short := t.Team.ShortName
+		if short == "" {
+			short = t.Team.Name
 		}
-		if len(name) > 3 {
-			name = name[:3]
+		if len(short) > 3 {
+			short = short[:3]
 		}
 		emoji := FlagEmoji(t.Team.ShortName)
 
@@ -364,7 +390,16 @@ func renderGroupGridCell(g api.WCGroup, width int) string {
 			ts = GridTeamDimStyle
 		}
 
-		line := ts.Render(fmt.Sprintf("  %s %-3s %s", emoji, name, pts))
+		// Render emoji+name as a single styled chunk to avoid terminals
+		// dropping the regional-indicator pair when sandwiched between
+		// neighboring ANSI escape sequences.
+		var label string
+		if emoji != "" {
+			label = ts.Render(fmt.Sprintf("%s %-3s", emoji, short))
+		} else {
+			label = ts.Render(fmt.Sprintf("   %-3s", short))
+		}
+		line := "  " + label + " " + ts.Render(pts)
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
