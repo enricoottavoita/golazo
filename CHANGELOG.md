@@ -9,12 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Agentic CLI Mode** - Golazo is now usable by agentic dev tools (Claude Code, Codex, etc). Adds JSON subcommands (`live`, `finished`, `match`, `leagues`, `capabilities`) with a stable envelope, typed error codes and self-describing contract. TUI behavior is unchanged. See [docs/CLI.md](docs/CLI.md).
-- **World Cup 2026 Flag Coverage** - Added flag emojis and name-to-code overrides for confirmed and likely 2026 qualifiers (Uzbekistan, Cape Verde, Curaçao, Haiti, Suriname, North Korea, Guatemala, etc.) plus broader confederation tail coverage for FotMob's qualifying-round payloads.
 
 ### Changed
 
 ### Fixed
-- **World Cup Flag Resolution** - Fixed countries with ambiguous FotMob short codes (e.g. South Africa and South Korea both shipping `SOU`) rendering with the wrong code and no flag. The team-label resolver now falls back to the local name-to-code override map when the FotMob short code has no registered flag.
+- **World Cup Flags** - Fixed ambiguous FotMob short codes (e.g. South Africa/South Korea both `SOU`) and missing 2026 qualifier flags causing teams to render with the wrong code or no flag.
 
 ## [0.26.0] - 2026-06-10
 
