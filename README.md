@@ -93,6 +93,7 @@ golazo
 
 - [Supported Leagues](docs/SUPPORTED_LEAGUES.md): Full list of available leagues and competitions, customize your preferences in the **Settings** menu.
 - [Notifications](docs/NOTIFICATIONS.md): Desktop notification setup and configuration
+- [CLI / Agent Mode](docs/CLI.md): JSON subcommands for agents and scripts (`golazo live`, `finished`, `match`, `leagues`)
 
 ---
 
