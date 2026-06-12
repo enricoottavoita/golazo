@@ -21,7 +21,7 @@ func sampleGroup() api.WCGroup {
 }
 
 func TestRenderGroupGridCell_EmojiAdjacentToName(t *testing.T) {
-	cell := renderGroupGridCell(sampleGroup(), 30)
+	cell := renderGroupGridCell(sampleGroup(), 30, false)
 
 	argFlag := FlagEmoji("ARG")
 	fraFlag := FlagEmoji("FRA")
@@ -92,7 +92,7 @@ func TestRenderGroupGridCell_WidthInvariant(t *testing.T) {
 		},
 	}
 
-	cell := renderGroupGridCell(mixed, 30)
+	cell := renderGroupGridCell(mixed, 30, false)
 	rows := strings.Split(cell, "\n")
 	if len(rows) < 5 {
 		t.Fatalf("expected header + 4 team rows, got %d lines:\n%s", len(rows), cell)
@@ -198,7 +198,7 @@ func TestRenderGroupGridCell_FixedHeight(t *testing.T) {
 		g    api.WCGroup
 	}{{"short", short}, {"long", long}} {
 		t.Run(tc.name, func(t *testing.T) {
-			cell := renderGroupGridCell(tc.g, 30)
+			cell := renderGroupGridCell(tc.g, 30, false)
 			got := strings.Count(cell, "\n") + 1
 			if got != wantLines {
 				t.Errorf("renderGroupGridCell(%s) produced %d lines, want %d\ncell:\n%s",
@@ -239,28 +239,39 @@ func TestRenderGroupGrid_RowHeightInvariant(t *testing.T) {
 	}
 	wc := &api.WorldCupData{Name: "Test WC", Groups: groups}
 
-	out := RenderGroupGrid(120, 60, wc, 0, "")
-	lines := strings.Split(out, "\n")
+	out := RenderGroupGrid(120, 200, wc, 0, "")
 
-	var rowHeights []int
-	start := -1
-	for i, line := range lines {
-		if strings.Contains(line, "┌") && start < 0 {
-			start = i
-		}
-		if strings.Contains(line, "└") && start >= 0 {
-			rowHeights = append(rowHeights, i-start+1)
-			start = -1
-		}
-	}
-	if len(rowHeights) < 4 {
-		t.Fatalf("expected at least 4 grid rows, got %d (heights: %v)\noutput:\n%s",
-			len(rowHeights), rowHeights, out)
-	}
-	for i := 1; i < len(rowHeights); i++ {
-		if rowHeights[i] != rowHeights[0] {
-			t.Errorf("grid row %d height = %d, row 0 height = %d (all heights: %v)",
-				i, rowHeights[i], rowHeights[0], rowHeights)
+	// Find the rendered group titles for the first cell of each visual
+	// row (A, D, G, J). With the borderless layout each cell starts on
+	// its own line; verify those start lines are evenly spaced so the row
+	// height is uniform regardless of differing per-group team counts.
+	lines := strings.Split(out, "\n")
+	var titleLineIdx []int
+	for _, key := range []string{"Group A", "Group D", "Group G", "Group J"} {
+		for i, line := range lines {
+			if strings.Contains(line, key) {
+				titleLineIdx = append(titleLineIdx, i)
+				break
+			}
 		}
 	}
+	if len(titleLineIdx) != 4 {
+		t.Fatalf("expected 4 row-start title lines, found %d at %v\noutput:\n%s",
+			len(titleLineIdx), titleLineIdx, out)
+	}
+	gap := titleLineIdx[1] - titleLineIdx[0]
+	for i := 2; i < len(titleLineIdx); i++ {
+		if titleLineIdx[i]-titleLineIdx[i-1] != gap {
+			t.Errorf("grid row spacing not uniform: gaps = %v (titles at %v)",
+				diffs(titleLineIdx), titleLineIdx)
+		}
+	}
+}
+
+func diffs(in []int) []int {
+	out := make([]int, 0, len(in)-1)
+	for i := 1; i < len(in); i++ {
+		out = append(out, in[i]-in[i-1])
+	}
+	return out
 }
