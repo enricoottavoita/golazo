@@ -24,6 +24,9 @@ If the user's question doesn't map to one of the above, this tool likely cannot 
 The canonical agent flow is **discover → list → drill in**. Every reliable use of `match <id>` first pulls the ID from a list call in the same pipeline:
 
 ```bash
+# 0. (Optional but recommended) Self-discover the CLI contract
+golazo capabilities | jq '.data[0].commands'
+
 # 1. Discover which competitions are active
 golazo leagues
 
@@ -51,6 +54,7 @@ This pattern keeps the in-process page-slug cache populated, which is what makes
 | `golazo finished [--days N] [--include-upcoming]` | Finished matches over the last N days (1..7, default 1); use `--include-upcoming` to also include today's not-yet-started matches |
 | `golazo match <id>` | Full match details (events, lineups, stats) |
 | `golazo leagues [--all]` | Active leagues (or every supported league) |
+| `golazo capabilities` | Machine-readable contract describing every subcommand, flag, error code and env var — call this once at session start to self-discover the CLI |
 
 ### Common flags
 

@@ -97,7 +97,10 @@ var liveFlags cliFlags
 var liveCmd = &cobra.Command{
 	Use:           "live",
 	Short:         "List live matches as JSON",
-	Long:          "Fetches today's live matches for the active leagues and prints a JSON envelope to stdout.",
+	Long: `Fetches today's live matches for the active leagues and prints a JSON envelope to stdout.
+
+Example output:
+  {"status":"ok","count":1,"data":[{"id":4506424,"league":{"id":47,"name":"Premier League","country":"England"},"home_team":{"id":8455,"name":"Chelsea","short_name":"Chelsea"},"away_team":{"id":6,"name":"Tottenham","short_name":"Spurs"},"status":"live","home_score":2,"away_score":1,"match_time":"2026-06-12T19:00:00Z","live_time":"67'","round":"Matchday 17"}]}`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	Run: func(cmd *cobra.Command, args []string) {

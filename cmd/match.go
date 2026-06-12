@@ -73,7 +73,13 @@ func runMatch(stdout, stderr io.Writer, flags cliFlags, args []string) int {
 var matchCmd = &cobra.Command{
 	Use:           "match <id>",
 	Short:         "Get match details as JSON",
-	Long:          "Fetches detailed information (events, lineups, stats, formations) for a single match by ID and prints a JSON envelope to stdout.",
+	Long: `Fetches detailed information (events, lineups, stats, formations) for a single match by ID and prints a JSON envelope to stdout.
+
+IMPORTANT: cold-calling 'golazo match <id>' with an arbitrary ID is unreliable — FotMob's details endpoint requires a page slug only populated by a prior 'live' or 'finished' call in the same process. Use the chained pattern instead:
+  golazo finished | jq -r '.data[0].id' | xargs golazo match
+
+Example output (truncated):
+  {"status":"ok","count":1,"data":[{"id":4506420,"home_team":{"name":"Liverpool"},"away_team":{"name":"Arsenal"},"status":"finished","home_score":3,"away_score":1,"events":[{"minute":12,"type":"goal","player":"Salah","team":{"name":"Liverpool"}}],"statistics":[{"key":"possession","label":"Possession","home_value":"58%","away_value":"42%"}],"venue":"Anfield"}]}`,
 	Args:          cobra.ArbitraryArgs, // validated in runMatch for precise error envelope
 	SilenceUsage:  true,
 	SilenceErrors: true,

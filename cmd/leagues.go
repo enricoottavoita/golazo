@@ -72,7 +72,10 @@ func runLeagues(stdout, stderr io.Writer, flags leaguesFlags) int {
 var leaguesCmd = &cobra.Command{
 	Use:           "leagues",
 	Short:         "List active (or all) supported leagues as JSON",
-	Long:          "Prints a JSON envelope listing currently active leagues (or all supported leagues with --all). No network calls. Useful for discovering league IDs to interpret live/finished results.",
+	Long: `Prints a JSON envelope listing currently active leagues (or all supported leagues with --all). No network calls. Useful for discovering league IDs to interpret live/finished results.
+
+Example output:
+  {"status":"ok","count":3,"data":[{"id":47,"name":"Premier League","country":"England","country_code":""},{"id":87,"name":"La Liga","country":"Spain","country_code":""},{"id":42,"name":"UEFA Champions League","country":"Europe","country_code":""}]}`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	Run: func(cmd *cobra.Command, args []string) {

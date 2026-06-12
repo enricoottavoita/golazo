@@ -168,6 +168,8 @@ func sliceLen(v any) int {
 		return len(s)
 	}
 	// Single-object fallback. Callers are expected to wrap singles in []T.
+	// Slices of an unrecognized type fall through here too and report 1; if
+	// you add a new agent-facing list type, register it above.
 	return 1
 }
 

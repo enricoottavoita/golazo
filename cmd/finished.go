@@ -151,7 +151,13 @@ func runFinished(stdout, stderr io.Writer, flags finishedFlags) int {
 var finishedCmd = &cobra.Command{
 	Use:           "finished",
 	Short:         "List finished matches over a day window as JSON",
-	Long:          "Fetches finished matches for the last --days days (default 1 = today) across active leagues. Use --include-upcoming to also include today's not-yet-started matches. Partial failures surface as degraded:true with failed_dates listed.",
+	Long: `Fetches finished matches for the last --days days (default 1 = today) across active leagues. Use --include-upcoming to also include today's not-yet-started matches. Partial failures surface as degraded:true with failed_dates listed.
+
+Example output:
+  {"status":"ok","count":2,"data":[{"id":4506420,"league":{"id":47,"name":"Premier League","country":"England"},"home_team":{"name":"Liverpool","short_name":"Liverpool"},"away_team":{"name":"Arsenal","short_name":"Arsenal"},"status":"finished","home_score":3,"away_score":1,"match_time":"2026-06-12T15:00:00Z"}]}
+
+Degraded example (one date failed but others succeeded):
+  {"status":"ok","degraded":true,"failed_dates":["2026-06-10"],"count":12,"data":[...]}`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	Run: func(cmd *cobra.Command, args []string) {
