@@ -280,6 +280,13 @@ func RenderGroupGrid(width, height int, wcData *api.WorldCupData, selectedGroupI
 	if cellW < 20 {
 		cellW = 20
 	}
+	// Cell content height = 1 title + gridCellTeamRows team rows. Pinning
+	// Height on the bordered style guarantees every cell in the grid
+	// renders at the same total height — including the empty filler cells
+	// used when groups count isn't a multiple of cols — so JoinHorizontal
+	// never has to pad and row-to-row spacing stays uniform across
+	// terminals with different emoji-width interpretations.
+	const cellContentH = 1 + gridCellTeamRows
 
 	var rows []string
 	for rowStart := 0; rowStart < len(wcData.Groups); rowStart += cols {
@@ -287,7 +294,10 @@ func RenderGroupGrid(width, height int, wcData *api.WorldCupData, selectedGroupI
 		for c := 0; c < cols; c++ {
 			gIdx := rowStart + c
 			if gIdx >= len(wcData.Groups) {
-				cells = append(cells, lipgloss.NewStyle().Width(cellW+2).Render(""))
+				cells = append(cells, lipgloss.NewStyle().
+					Width(cellW+2).
+					Height(cellContentH+2).
+					Render(""))
 				continue
 			}
 			g := wcData.Groups[gIdx]
@@ -297,9 +307,9 @@ func RenderGroupGrid(width, height int, wcData *api.WorldCupData, selectedGroupI
 
 			var cellStyle lipgloss.Style
 			if selected {
-				cellStyle = GridSelectedGroupStyle.Width(cellW)
+				cellStyle = GridSelectedGroupStyle.Width(cellW).Height(cellContentH)
 			} else {
-				cellStyle = GridNormalGroupStyle.Width(cellW)
+				cellStyle = GridNormalGroupStyle.Width(cellW).Height(cellContentH)
 			}
 			cells = append(cells, cellStyle.Render(content))
 		}
@@ -324,13 +334,22 @@ func RenderGroupGrid(width, height int, wcData *api.WorldCupData, selectedGroupI
 // visual width of regional-indicator / tag-sequence flag clusters. Without
 // this pin, terminals following the legacy width table (or rendering tag
 // sequences without clustering) push neighboring rows out of column.
+//
+// The cell is also padded/truncated to a fixed line count so every cell in
+// the grid occupies the same vertical space regardless of how many rows
+// FotMob ships per group (4 in normal play, occasionally more in qualifier
+// formats or alongside playoff annotations).
 func renderGroupGridCell(g api.WCGroup, width int) string {
 	title := GridGroupHeaderStyle.Render(g.Name)
 	lines := []string{title}
 	// labelTargetWidth is the visual budget every TeamLabel is padded to;
 	// add 1 cell of trailing breathing room before the points column.
 	const labelCellW = labelTargetWidth + 1
+	teamLines := make([]string, 0, gridCellTeamRows)
 	for i, t := range g.Teams {
+		if i >= gridCellTeamRows {
+			break
+		}
 		pts := fmt.Sprintf("%2d", t.Points)
 
 		var ts lipgloss.Style
@@ -348,7 +367,20 @@ func renderGroupGridCell(g api.WCGroup, width int) string {
 		// on flag-emoji visual widths.
 		label := ts.Width(labelCellW).Render(TeamLabel(t.Team))
 		line := "  " + label + ts.Render(pts)
-		lines = append(lines, line)
+		teamLines = append(teamLines, line)
 	}
+	// Pad to a fixed row count so the bordered cell height is identical
+	// across every group, even when FotMob ships fewer than the expected
+	// number of teams (e.g. early qualifier rounds).
+	for len(teamLines) < gridCellTeamRows {
+		teamLines = append(teamLines, "")
+	}
+	lines = append(lines, teamLines...)
 	return strings.Join(lines, "\n")
 }
+
+// gridCellTeamRows is the fixed number of team rows rendered per grid cell.
+// Normal WC groups carry exactly 4 teams; the constant exists so the cell
+// height is deterministic regardless of any extra rows FotMob may ship
+// (qualifier playoffs, "to be determined" placeholders, etc.).
+const gridCellTeamRows = 4

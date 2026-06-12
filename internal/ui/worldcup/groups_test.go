@@ -107,3 +107,101 @@ func TestRenderGroupGridCell_WidthInvariant(t *testing.T) {
 		}
 	}
 }
+
+// TestRenderGroupGridCell_FixedHeight locks in the fix for the row-4 gap
+// reported on macOS Terminal under #158: every cell must render at exactly
+// 1 + gridCellTeamRows lines regardless of how many teams FotMob ships.
+// Without this, JoinHorizontal pads shorter cells with whitespace that
+// surfaces as vertical drift in the bordered grid layout.
+func TestRenderGroupGridCell_FixedHeight(t *testing.T) {
+	short := api.WCGroup{
+		ID: 1, Letter: "S", Name: "Group S",
+		Teams: []api.LeagueTableEntry{
+			{Position: 1, Team: api.Team{Name: "Mexico", ShortName: "MEX"}, Points: 3},
+			{Position: 2, Team: api.Team{Name: "Brazil", ShortName: "BRA"}, Points: 1},
+		},
+	}
+	long := api.WCGroup{
+		ID: 2, Letter: "L", Name: "Group L",
+		Teams: []api.LeagueTableEntry{
+			{Position: 1, Team: api.Team{Name: "Mexico", ShortName: "MEX"}, Points: 9},
+			{Position: 2, Team: api.Team{Name: "England", ShortName: "ENG"}, Points: 6},
+			{Position: 3, Team: api.Team{Name: "South Korea", ShortName: "SOU"}, Points: 4},
+			{Position: 4, Team: api.Team{Name: "Nowhereland", ShortName: "ZZZ"}, Points: 1},
+			{Position: 5, Team: api.Team{Name: "Extra", ShortName: "EXT"}, Points: 0},
+			{Position: 6, Team: api.Team{Name: "More", ShortName: "MOR"}, Points: 0},
+		},
+	}
+
+	const wantLines = 1 + gridCellTeamRows
+	for _, tc := range []struct {
+		name string
+		g    api.WCGroup
+	}{{"short", short}, {"long", long}} {
+		t.Run(tc.name, func(t *testing.T) {
+			cell := renderGroupGridCell(tc.g, 30)
+			got := strings.Count(cell, "\n") + 1
+			if got != wantLines {
+				t.Errorf("renderGroupGridCell(%s) produced %d lines, want %d\ncell:\n%s",
+					tc.name, got, wantLines, cell)
+			}
+		})
+	}
+}
+
+// TestRenderGroupGrid_RowHeightInvariant covers the row-4 gap reported on
+// macOS Terminal under #158: every visual row of cells must occupy the same
+// number of lines, even when groups in different rows carry different team
+// counts. This is the property that prevents the bordered grid from drifting
+// vertically when FotMob ships unusual qualifier shapes.
+func TestRenderGroupGrid_RowHeightInvariant(t *testing.T) {
+	mkGroup := func(letter string, n int) api.WCGroup {
+		teams := make([]api.LeagueTableEntry, n)
+		for i := range teams {
+			teams[i] = api.LeagueTableEntry{
+				Position: i + 1,
+				Team:     api.Team{Name: "Team" + letter, ShortName: "TM" + letter},
+				Points:   0,
+			}
+		}
+		return api.WCGroup{ID: 100 + int(letter[0]), Letter: letter, Name: "Group " + letter, Teams: teams}
+	}
+
+	letters := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"}
+	groups := make([]api.WCGroup, len(letters))
+	for i, l := range letters {
+		// Simulate FotMob shipping an extra placeholder team in the last
+		// row of groups, which is the pattern that triggered the report.
+		n := 4
+		if i >= 9 {
+			n = 5
+		}
+		groups[i] = mkGroup(l, n)
+	}
+	wc := &api.WorldCupData{Name: "Test WC", Groups: groups}
+
+	out := RenderGroupGrid(120, 60, wc, 0, "")
+	lines := strings.Split(out, "\n")
+
+	var rowHeights []int
+	start := -1
+	for i, line := range lines {
+		if strings.Contains(line, "┌") && start < 0 {
+			start = i
+		}
+		if strings.Contains(line, "└") && start >= 0 {
+			rowHeights = append(rowHeights, i-start+1)
+			start = -1
+		}
+	}
+	if len(rowHeights) < 4 {
+		t.Fatalf("expected at least 4 grid rows, got %d (heights: %v)\noutput:\n%s",
+			len(rowHeights), rowHeights, out)
+	}
+	for i := 1; i < len(rowHeights); i++ {
+		if rowHeights[i] != rowHeights[0] {
+			t.Errorf("grid row %d height = %d, row 0 height = %d (all heights: %v)",
+				i, rowHeights[i], rowHeights[0], rowHeights)
+		}
+	}
+}
