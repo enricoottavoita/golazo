@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.28.0] - 2026-06-14
+
+### Added
 - **AFC Champions League Two** - Added the AFC Champions League Two (FotMob ID 9469) to the supported leagues list under the Asia region.
 
 ### Changed
