@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
 ### Changed
 - **Reddit goal-link retrieval** — improved coverage for World Cup and national-team matches, with looser team and scorer name matching across spellings, diacritics, and common r/soccer title formats.
+
+### Fixed
 
 ## [0.27.1] - 2026-06-12
 
