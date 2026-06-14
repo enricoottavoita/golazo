@@ -1,7 +1,6 @@
 package reddit
 
 import (
-	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -110,13 +109,12 @@ func findBestMatch(results []SearchResult, goal GoalInfo) *SearchResult {
 			score += 25
 		}
 
-		// Check for score match (required for high confidence)
-		scoreMatch := scorePattern.MatchString(result.Title)
-		if scoreMatch {
-			score += 20 // High bonus for score match
-		} else {
-			// If score doesn't match, heavily penalize this result
-			score -= 15
+		// Check for score match (advisory bonus only — no penalty)
+		// Score format varies wildly across r/soccer titles (bracketed, spaced,
+		// contiguous), so a missing match is not strong evidence of a wrong post.
+		// Country + time + scorer carry the matching weight.
+		if scorePattern.MatchString(result.Title) {
+			score += 20
 		}
 
 		// Check for scorer name if available
@@ -323,15 +321,22 @@ func buildMinutePattern(goal GoalInfo) *regexp.Regexp {
 }
 
 // buildScorePattern creates a regex to match the score at the time of goal.
-// Matches various score formats like "1-0", "2-1", "[1-0]", etc.
+// Accepts several formats commonly used in r/soccer goal-video titles:
+//   - contiguous: "1-0"
+//   - spaced: "1 - 0"
+//   - bracketed on either side: "[1] - 0", "1 - [0]", "[1]-0", "1-[0]"
+//   - parenthesised on either side: "(1) - 0", "1 - (0)"
+// The brackets/parens may wrap either the home or away digit but not both.
 func buildScorePattern(homeScore, awayScore int) *regexp.Regexp {
-	scoreStr := fmt.Sprintf("%d-%d", homeScore, awayScore)
-	// Match score in various formats: "1-0", "[1-0]", "(1-0)", "1-0", etc.
-	patternStr := `[\[\(\s]*` + regexp.QuoteMeta(scoreStr) + `[\]\)\s]*`
+	h := strconv.Itoa(homeScore)
+	a := strconv.Itoa(awayScore)
+	// Per-digit optional bracket/paren wrappers (each digit may be wrapped
+	// independently), arbitrary whitespace around the dash.
+	patternStr := `[\[\(]?` + h + `[\]\)]?\s*-\s*[\[\(]?` + a + `[\]\)]?`
 	compiled, err := regexp.Compile(patternStr)
 	if err != nil {
 		// Fallback to exact match
-		return regexp.MustCompile(regexp.QuoteMeta(scoreStr))
+		return regexp.MustCompile(regexp.QuoteMeta(h + "-" + a))
 	}
 	return compiled
 }

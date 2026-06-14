@@ -255,14 +255,26 @@ func TestBuildScorePattern(t *testing.T) {
 		{
 			name: "1-0",
 			home: 1, away: 0,
-			shouldMatch:    []string{"1-0", "[1-0]", "(1-0)", " 1-0 "},
+			shouldMatch:    []string{"1-0", "[1-0]", "(1-0)", " 1-0 ", "1 - 0", "[1] - 0", "1 - [0]", "[1]-0", "1-[0]", "(1) - 0"},
 			shouldNotMatch: []string{"2-0", "1-1"},
 		},
 		{
 			name: "2-1",
 			home: 2, away: 1,
-			shouldMatch:    []string{"2-1", "[2-1]"},
+			shouldMatch:    []string{"2-1", "[2-1]", "[2] - 1", "2 - [1]"},
 			shouldNotMatch: []string{"1-2", "2-0"},
+		},
+		{
+			name: "bracketed real-world title — australia [1] - 0 türkiye",
+			home: 1, away: 0,
+			shouldMatch:    []string{"Australia [1] - 0 Türkiye - Irankunda 27'"},
+			shouldNotMatch: []string{"Australia [2] - 1 Türkiye"},
+		},
+		{
+			name: "bracketed 3-0 — wolves west ham fixture",
+			home: 3, away: 0,
+			shouldMatch:    []string{"Wolves [3] - 0 West Ham - Mane 41'"},
+			shouldNotMatch: []string{"Wolves 2-0 West Ham"},
 		},
 	}
 
@@ -407,6 +419,40 @@ func TestFindBestMatch(t *testing.T) {
 				t.Errorf("got URL %q, want %q", got.URL, tt.wantURL)
 			}
 		})
+	}
+}
+
+// TestFindBestMatchScoreAdvisory verifies that a candidate with strong team +
+// minute + scorer evidence is still selected even when the score string in the
+// title doesn't match (since r/soccer titles often use bracketed formats that
+// the matcher cannot perfectly parse). Score is an advisory bonus, not a gate.
+func TestFindBestMatchScoreAdvisory(t *testing.T) {
+	matchTime := time.Date(2025, 11, 10, 16, 0, 0, 0, time.UTC)
+	results := []SearchResult{
+		{
+			// Real bracketed format from r/soccer — note no contiguous "1-0".
+			Title:     "Australia [1] - 0 Türkiye - Nystrom Irankunda 27'",
+			URL:       "https://example.com/au-tr",
+			CreatedAt: matchTime.Add(2 * time.Hour),
+			Score:     500,
+		},
+	}
+	goal := GoalInfo{
+		HomeTeam:   "Australia",
+		AwayTeam:   "Türkiye",
+		ScorerName: "Nystrom Irankunda",
+		Minute:     27,
+		HomeScore:  1,
+		AwayScore:  0,
+		IsHomeTeam: true,
+		MatchTime:  matchTime,
+	}
+	got := findBestMatch(results, goal)
+	if got == nil {
+		t.Fatal("expected match for Australia [1] - 0 Türkiye title, got nil")
+	}
+	if got.URL != "https://example.com/au-tr" {
+		t.Errorf("got URL %q, want Australia/Türkiye URL", got.URL)
 	}
 }
 
