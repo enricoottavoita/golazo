@@ -216,6 +216,7 @@ var DefaultLeagueIDs = []int{
 	47, // Premier League
 	87, // La Liga
 	42, // UEFA Champions League
+	77, // FIFA World Cup
 }
 
 // ActiveLeagueIDs returns the league IDs that should be used for API calls.
