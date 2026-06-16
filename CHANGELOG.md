@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Fixed
+- **Live matches view** — matches that kicked off before the user's UTC midnight (e.g. evening kickoffs for users in the Americas, very common during the World Cup) are no longer dropped from the Live view. Live is now decided by match status, not by UTC calendar day.
 
 ## [0.28.0] - 2026-06-14
 
