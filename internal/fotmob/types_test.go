@@ -162,6 +162,29 @@ func TestToAPIMatch_StatusVariants(t *testing.T) {
 			status{},
 			api.MatchStatusNotStarted,
 		},
+		{
+			// FotMob's `started` boolean lags realtime by minutes around
+			// kickoff, but `halfs.firstHalfStarted` populates immediately.
+			// Iran vs New Zealand (World Cup 2026) hit this case.
+			"live via firstHalfStarted while started lags false",
+			status{
+				Started:  boolPtr(false),
+				Finished: boolPtr(false),
+				Halfs:    &halfs{FirstHalfStarted: "16.06.2026 03:00:00"},
+			},
+			api.MatchStatusLive,
+		},
+		{
+			// Finished beats firstHalfStarted (both will be present for a
+			// completed match; finished must win to avoid classifying it as live).
+			"finished beats firstHalfStarted",
+			status{
+				Started:  boolPtr(true),
+				Finished: boolPtr(true),
+				Halfs:    &halfs{FirstHalfStarted: "16.06.2026 03:00:00"},
+			},
+			api.MatchStatusFinished,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

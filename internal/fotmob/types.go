@@ -38,12 +38,17 @@ type league struct {
 
 type status struct {
 	UTCTime   string    `json:"utcTime"`   // Can be null/empty
-	Started   *bool     `json:"started"`   // Can be null
+	Started   *bool     `json:"started"`   // Can be null; FotMob's SSR lags realtime by minutes around kickoff
 	Finished  *bool     `json:"finished"`  // Can be null
 	Cancelled *bool     `json:"cancelled"` // Can be null
+	Halfs     *halfs    `json:"halfs,omitempty"` // Realtime kickoff signal; firstHalfStarted populates before Started flips
 	LiveTime  *liveTime `json:"liveTime,omitempty"`
 	Score     *score    `json:"score,omitempty"`
 	ScoreStr  string    `json:"scoreStr,omitempty"` // Score as string (e.g., "4 - 2"), used when Score object is absent
+}
+
+type halfs struct {
+	FirstHalfStarted string `json:"firstHalfStarted,omitempty"`
 }
 
 type liveTime struct {
@@ -104,12 +109,17 @@ func (m fotmobMatch) toAPIMatch() api.Match {
 		}
 	}
 
-	// Determine status - handle null boolean values
+	// Determine status - handle null boolean values.
+	// "Started" can lag realtime by several minutes on FotMob's SSR around
+	// kickoff. The "halfs.firstHalfStarted" timestamp populates immediately
+	// when play begins, so treat its presence as a kickoff signal too.
+	isStarted := (m.Status.Started != nil && *m.Status.Started) ||
+		(m.Status.Halfs != nil && m.Status.Halfs.FirstHalfStarted != "")
 	if m.Status.Cancelled != nil && *m.Status.Cancelled {
 		match.Status = api.MatchStatusCancelled
 	} else if m.Status.Finished != nil && *m.Status.Finished {
 		match.Status = api.MatchStatusFinished
-	} else if m.Status.Started != nil && *m.Status.Started {
+	} else if isStarted {
 		match.Status = api.MatchStatusLive
 		if m.Status.LiveTime != nil {
 			match.LiveTime = &m.Status.LiveTime.Short
