@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -34,27 +33,15 @@ type Fetcher interface {
 // Uses Reddit's public JSON API with rate limiting.
 type PublicJSONFetcher struct {
 	httpClient  *http.Client
-	userAgent   string
 	rateLimiter *ratelimit.Limiter
 }
 
-// userAgents is a small pool of generic browser-style User-Agent strings.
-// The previous fixed UA "golazo:v1.0.0 (by /u/golazo_app)" matched a pattern
-// that Reddit's edge network was reliably blocking with a 403 + HTML block
-// page. Rotating across browser-shaped UAs blends requests into common
-// traffic. Not a security mechanism — purely a coexistence hint for Reddit's
-// edge heuristics.
-var userAgents = []string{
-	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
-	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-}
-
-// pickUserAgent returns a User-Agent from the rotation pool.
-func pickUserAgent() string {
-	return userAgents[rand.Intn(len(userAgents))]
-}
+// browserUserAgent is sent on every request. The queue's 30s pacing and
+// cooldown subsume the anti-detection role that User-Agent rotation
+// previously played; one fixed browser-shaped UA is enough to coexist with
+// Reddit's edge heuristics without introducing additional sources of
+// nondeterminism in the request signature.
+const browserUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
 
 // NewPublicJSONFetcher creates a new fetcher using public Reddit JSON API.
 func NewPublicJSONFetcher() *PublicJSONFetcher {
@@ -67,10 +54,6 @@ func NewPublicJSONFetcher() *PublicJSONFetcher {
 				IdleConnTimeout:     90 * time.Second,
 			},
 		},
-		// User-Agent is now selected per-request via pickUserAgent(); this
-		// field is kept for backward compatibility with any callers that
-		// inspect it but is no longer the source of truth on the wire.
-		userAgent:   "",
 		rateLimiter: ratelimit.NewFromRate(10), // 10 requests per minute for public API
 	}
 }
@@ -106,15 +89,11 @@ func (f *PublicJSONFetcher) Search(query string, limit int, matchTime time.Time,
 		limit,
 	)
 
-	// Small randomized jitter (200-900ms) before each request to break up
-	// burst patterns that Reddit's edge correlates against bot traffic.
-	time.Sleep(time.Duration(200+rand.Intn(700)) * time.Millisecond)
-
 	req, err := http.NewRequest("GET", searchURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
-	req.Header.Set("User-Agent", pickUserAgent())
+	req.Header.Set("User-Agent", browserUserAgent)
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 
@@ -228,8 +207,12 @@ func (c *Client) GoalLink(goal GoalInfo) (*GoalLink, error) {
 		return link, nil
 	}
 
-	// Search Reddit for the goal
-	link, err := c.searchForGoal(goal)
+	// Search Reddit for the goal via a single-strategy attempt. The queue
+	// (see GoalLinksAsync) is the production path for batched fetches and
+	// owns pacing/cooldown; this singular method is preserved for the
+	// scripts/test_reddit_search.go ad-hoc tool and any direct caller that
+	// wants synchronous single-goal semantics without subscription wiring.
+	link, err := c.searchForGoalOnce(goal)
 	if err != nil {
 		// Don't cache errors - allow retry
 		return nil, err
@@ -244,66 +227,6 @@ func (c *Client) GoalLink(goal GoalInfo) (*GoalLink, error) {
 	}
 
 	return link, nil
-}
-
-// BatchSize is the maximum number of goals to fetch per batch.
-// Reduced to make requests even more spaced out.
-const BatchSize = 3
-
-// BatchDelay is the delay between batches to avoid rate limiting.
-const BatchDelay = 5 * time.Second
-
-// GoalLinks retrieves links for multiple goals, using cache where available.
-// Goals are de-duplicated and batched to avoid rate limiting.
-func (c *Client) GoalLinks(goals []GoalInfo) map[GoalLinkKey]*GoalLink {
-	results := make(map[GoalLinkKey]*GoalLink)
-
-	// De-duplicate goals by key and filter out already-cached goals
-	seen := make(map[GoalLinkKey]bool)
-	var uncachedGoals []GoalInfo
-
-	for _, goal := range goals {
-		key := GoalLinkKey{MatchID: goal.MatchID, Minute: goal.Minute}
-
-		// Skip duplicates
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-
-		// Check cache first
-		if link := c.cache.Get(key); link != nil {
-			if !IsNotFound(link) {
-				results[key] = link
-			}
-			// Skip - already cached (found or not found)
-			continue
-		}
-
-		uncachedGoals = append(uncachedGoals, goal)
-	}
-
-	// Fetch uncached goals in batches with conservative delays
-	for i := 0; i < len(uncachedGoals); i += BatchSize {
-		// Add delay between batches (not before first batch)
-		if i > 0 {
-			time.Sleep(BatchDelay)
-		}
-
-		// Process batch
-		end := i + BatchSize
-		end = min(end, len(uncachedGoals))
-
-		for _, goal := range uncachedGoals[i:end] {
-			key := GoalLinkKey{MatchID: goal.MatchID, Minute: goal.Minute}
-			link, err := c.GoalLink(goal)
-			if err == nil && link != nil {
-				results[key] = link
-			}
-		}
-	}
-
-	return results
 }
 
 // GoalLinksAsync schedules a fetch for each goal through the per-Client queue
@@ -379,46 +302,6 @@ func (c *Client) goalQueueLazy() *goalQueue {
 		c.queue = newGoalQueue(c.searchForGoalOnce, c.cache, c.debugLogger, 0, 0)
 	})
 	return c.queue
-}
-
-// searchForGoal searches Reddit for a specific goal with conservative retry logic.
-func (c *Client) searchForGoal(goal GoalInfo) (*GoalLink, error) {
-	// Conservative retry logic - Reddit is very aggressive with CAPTCHA detection
-	maxRetries := 2               // Reduced from 3
-	baseDelay := 60 * time.Second // Increased delay between retries
-
-	var lastErr error
-	for attempt := range maxRetries {
-		if attempt > 0 {
-			// Exponential backoff: 30s, 60s, 120s
-			delay := time.Duration(attempt) * baseDelay
-			time.Sleep(delay)
-		}
-
-		result, err := c.searchForGoalOnce(goal)
-		if err == nil {
-			return result, nil
-		}
-
-		lastErr = err
-
-		// Check if this is a CAPTCHA/rate limit error
-		if strings.Contains(err.Error(), "CAPTCHA") ||
-			strings.Contains(err.Error(), "blocking requests") ||
-			strings.Contains(err.Error(), "rate limit") ||
-			strings.Contains(err.Error(), "HTML instead of JSON") {
-			// Don't retry CAPTCHA errors - Reddit is very aggressive, just give up
-			c.DebugLog(fmt.Sprintf("Reddit blocking goal %d:%d: giving up immediately", goal.MatchID, goal.Minute))
-			return nil, err
-		}
-
-		// For other errors, retry on next attempt
-	}
-
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return nil, nil // No match found after all retries
 }
 
 // searchForGoalOnce performs a single search attempt for a goal.

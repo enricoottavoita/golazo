@@ -66,9 +66,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Route filter matches message to the appropriate list based on current view
 		return m.handleFilterMatches(msg)
 
-	case goalLinksMsg:
-		return m.handleGoalLinks(msg)
-
 	case goalLinkStreamMsg:
 		return m.handleGoalLinkStream(msg)
 
@@ -1296,40 +1293,6 @@ func max(a, b int) int {
 		return a
 	}
 	return b
-}
-
-// handleGoalLinks processes goal replay links fetched from Reddit.
-func (m model) handleGoalLinks(msg goalLinksMsg) (tea.Model, tea.Cmd) {
-	m.debugLog(fmt.Sprintf("handleGoalLinks called for match %d with %d links", msg.matchID, len(msg.links)))
-	if len(msg.links) == 0 {
-		m.debugLog(fmt.Sprintf("GoalLinks completed for match %d: no links found", msg.matchID))
-		return m, nil
-	}
-
-	m.debugLog(fmt.Sprintf("GoalLinks completed for match %d: processing %d links", msg.matchID, len(msg.links)))
-
-	// Merge new links into the goal links map
-	if m.goalLinks == nil {
-		m.goalLinks = make(map[reddit.GoalLinkKey]*reddit.GoalLink)
-	}
-
-	validLinks := 0
-	failedLinks := 0
-
-	for key, link := range msg.links {
-		m.goalLinks[key] = link
-		if link != nil && link.URL != "" && link.URL != "__NOT_FOUND__" {
-			validLinks++
-			m.debugLog(fmt.Sprintf("Cached goal link: %d:%d → %s (post: %s)", key.MatchID, key.Minute, link.URL, link.PostURL))
-		} else if link != nil && link.URL == "__NOT_FOUND__" {
-			failedLinks++
-			m.debugLog(fmt.Sprintf("No link found: %d:%d", key.MatchID, key.Minute))
-		}
-	}
-
-	m.debugLog(fmt.Sprintf("Goal link batch complete: %d valid, %d failed", validLinks, failedLinks))
-
-	return m, nil
 }
 
 // handleGoalLinkStream stashes a freshly-opened goal-link subscription

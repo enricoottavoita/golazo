@@ -66,13 +66,6 @@ type pollTickMsg struct {
 // This allows the "Updating..." spinner to be visible for at least 1 second.
 type pollDisplayCompleteMsg struct{}
 
-// goalLinksMsg contains goal replay links fetched from Reddit.
-// Sent after searching r/soccer for Media posts matching goal events.
-type goalLinksMsg struct {
-	matchID int
-	links   map[reddit.GoalLinkKey]*reddit.GoalLink
-}
-
 // goalLinkStreamMsg hands a freshly-opened goal-link subscription channel to
 // the Update loop. The handler stashes the channel on the model (keyed by
 // matchID) and arms the first reader Cmd. Emitted once per match-details
