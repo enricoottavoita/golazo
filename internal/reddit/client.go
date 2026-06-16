@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/0xjuanma/golazo/internal/ratelimit"
@@ -159,6 +160,9 @@ type Client struct {
 	fetcher     Fetcher // Reddit public API fetcher
 	cache       *GoalLinkCache
 	debugLogger DebugLogger // Optional debug logger function
+
+	queueOnce sync.Once
+	queue     *goalQueue
 }
 
 // DebugLog forwards a message to the configured debug logger if one is wired.
@@ -300,6 +304,81 @@ func (c *Client) GoalLinks(goals []GoalInfo) map[GoalLinkKey]*GoalLink {
 	}
 
 	return results
+}
+
+// GoalLinksAsync schedules a fetch for each goal through the per-Client queue
+// and streams results on the returned channel. Cache hits are emitted
+// immediately; uncached goals are enqueued for serial fetching at
+// QueueInterval pacing. The returned channel is closed once every goal in
+// `goals` has produced a result (or been deduplicated against an in-flight
+// peer). Each emitted GoalResult.Link is nil when the goal was not found,
+// was dropped due to an ErrBlocked cooldown, or hit a transient fetch error.
+//
+// Use this in preference to the synchronous GoalLinks: it's what the app's
+// subscription wiring consumes for progressive per-goal UI updates and is
+// the only path that honors the global queue's cooldown semantics.
+func (c *Client) GoalLinksAsync(goals []GoalInfo) <-chan GoalResult {
+	out := make(chan GoalResult, len(goals))
+
+	// First pass: serve cache hits inline (no queue work) and collect the
+	// uncached subset, de-duplicated by key. Same de-dup as the sync path —
+	// keeps the queue contract simple (one fetch per key per batch) while
+	// in-flight de-dup inside the queue handles cross-batch collisions.
+	seen := make(map[GoalLinkKey]bool)
+	var work []GoalInfo
+	for _, g := range goals {
+		key := GoalLinkKey{MatchID: g.MatchID, Minute: g.Minute}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		if link := c.cache.Get(key); link != nil {
+			if !IsNotFound(link) {
+				out <- GoalResult{Key: key, Link: link}
+			}
+			continue
+		}
+		work = append(work, g)
+	}
+
+	if len(work) == 0 {
+		close(out)
+		return out
+	}
+
+	// Reply channel buffered to len(work) so the queue worker never blocks
+	// when broadcasting results to this batch. The forwarder goroutine below
+	// owns closing `out` once every queued goal has emitted exactly one
+	// GoalResult.
+	replies := make(chan GoalResult, len(work))
+	queue := c.goalQueueLazy()
+	for _, g := range work {
+		queue.Enqueue(g, replies)
+	}
+
+	go func() {
+		defer close(out)
+		for i := 0; i < len(work); i++ {
+			r, ok := <-replies
+			if !ok {
+				return
+			}
+			out <- r
+		}
+	}()
+
+	return out
+}
+
+// goalQueueLazy returns the per-Client queue, constructing it on first use.
+// Keeping construction lazy means the worker goroutine doesn't start until a
+// caller actually opts into the async API.
+func (c *Client) goalQueueLazy() *goalQueue {
+	c.queueOnce.Do(func() {
+		c.queue = newGoalQueue(c.searchForGoalOnce, c.cache, c.debugLogger, 0, 0)
+	})
+	return c.queue
 }
 
 // searchForGoal searches Reddit for a specific goal with conservative retry logic.
