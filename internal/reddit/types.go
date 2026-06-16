@@ -100,3 +100,12 @@ type GoalInfo struct {
 	IsHomeTeam    bool
 	MatchTime     time.Time
 }
+
+// GoalResult is the per-goal outcome streamed from Client.GoalLinksAsync.
+// Link is nil when the goal was searched but no match was found, or when the
+// fetch was dropped due to a Reddit block (the queue does not cache blocks,
+// so a future call will re-try after the cooldown elapses).
+type GoalResult struct {
+	Key  GoalLinkKey
+	Link *GoalLink
+}
