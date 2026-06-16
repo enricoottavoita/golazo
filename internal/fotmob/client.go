@@ -192,11 +192,8 @@ func (c *Client) MatchesByDateWithTabs(ctx context.Context, date time.Time, tabs
 			c.maxConcurrent <- struct{}{}        // acquire semaphore
 			defer func() { <-c.maxConcurrent }() // release semaphore
 
-			// Apply rate limiting (minimal delay for concurrent requests)
-			c.rateLimiter.Wait()
-
-			// Fetch league page and extract data from __NEXT_DATA__
-			pageProps, err := fetchLeagueFromPage(ctx, c.httpClient, id)
+			// Fetch league page (cache-aware; helper owns rate limiting)
+			pageProps, err := c.fetchLeaguePage(ctx, id)
 			if err != nil {
 				// Skip this league on error - best effort aggregation
 				return
@@ -310,11 +307,8 @@ func (c *Client) MatchesByDateWithTabs(ctx context.Context, date time.Time, tabs
 func (c *Client) MatchesForLeagueAndDate(ctx context.Context, leagueID int, date time.Time, tab string) ([]api.Match, error) {
 	requestDateStr := date.UTC().Format("2006-01-02")
 
-	// Apply rate limiting
-	c.rateLimiter.Wait()
-
-	// Fetch league page and extract data from __NEXT_DATA__
-	pageProps, err := fetchLeagueFromPage(ctx, c.httpClient, leagueID)
+	// Fetch league page (cache-aware; helper owns rate limiting)
+	pageProps, err := c.fetchLeaguePage(ctx, leagueID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch league %d page: %w", leagueID, err)
 	}
@@ -618,11 +612,8 @@ func (c *Client) LeagueTableWithParent(ctx context.Context, leagueID int, league
 
 // fetchLeagueTable fetches the league table for a specific league ID.
 func (c *Client) fetchLeagueTable(ctx context.Context, leagueID int) ([]api.LeagueTableEntry, error) {
-	// Apply rate limiting
-	c.rateLimiter.Wait()
-
-	// Fetch league page and extract data from __NEXT_DATA__
-	pageProps, err := fetchLeagueFromPage(ctx, c.httpClient, leagueID)
+	// Fetch league page (cache-aware; helper owns rate limiting)
+	pageProps, err := c.fetchLeaguePage(ctx, leagueID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch league %d table page: %w", leagueID, err)
 	}

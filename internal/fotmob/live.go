@@ -56,9 +56,7 @@ func classifyLeagueMatches(allMatches []fotmobMatch, leagueInfo league, now time
 // "today" (e.g. a 22:00Z kickoff during its second half for a user past UTC
 // midnight).
 func (c *Client) LiveAndUpcomingForLeague(ctx context.Context, leagueID int) (live, upcoming []api.Match, err error) {
-	c.rateLimiter.Wait()
-
-	pageProps, err := fetchLeagueFromPage(ctx, c.httpClient, leagueID)
+	pageProps, err := c.fetchLeaguePage(ctx, leagueID)
 	if err != nil {
 		c.debugLog("live: league page fetch failed", "leagueID", leagueID, "err", err)
 		return nil, nil, fmt.Errorf("fetch league %d page: %w", leagueID, err)
