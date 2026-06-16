@@ -2,7 +2,6 @@ package fotmob
 
 import (
 	"encoding/json"
-	"sync"
 	"time"
 
 	"github.com/0xjuanma/golazo/internal/api"
@@ -13,7 +12,6 @@ import (
 type CacheConfig struct {
 	MatchesTTL      time.Duration // How long to cache match list results
 	MatchDetailsTTL time.Duration // How long to cache match details
-	LiveMatchesTTL  time.Duration // How long to cache live matches list
 	PageBodyTTL     time.Duration // How long to cache raw FotMob league page JSON bodies
 	MaxMatchesCache int           // Maximum number of date entries to cache
 	MaxDetailsCache int           // Maximum number of match details to cache
@@ -25,7 +23,6 @@ func DefaultCacheConfig() CacheConfig {
 	return CacheConfig{
 		MatchesTTL:      15 * time.Minute, // Matches list cache (stats view uses client-side filtering)
 		MatchDetailsTTL: 5 * time.Minute,  // Details for live matches need fresher data
-		LiveMatchesTTL:  2 * time.Minute,  // Live matches list cache (quick nav doesn't re-fetch)
 		PageBodyTTL:     60 * time.Second, // Raw league page bodies — short to keep live data fresh
 		MaxMatchesCache: 10,               // Cache up to 10 date queries
 		MaxDetailsCache: 100,              // Cache up to 100 match details
@@ -39,13 +36,6 @@ type ResponseCache struct {
 	matchesCache *cache.Map[string, []api.Match]
 	detailsCache *cache.Map[int, *api.MatchDetails]
 	pageCache    *cache.Map[int, json.RawMessage]
-	liveMu       sync.RWMutex
-	liveCache    *liveEntry
-}
-
-type liveEntry struct {
-	matches   []api.Match
-	expiresAt time.Time
 }
 
 // NewResponseCache creates a new cache with the given configuration.
@@ -111,21 +101,3 @@ func (c *ResponseCache) SetPage(leagueID int, body json.RawMessage) {
 	c.pageCache.Set(leagueID, body)
 }
 
-// SetLiveMatches stores live matches in cache with TTL.
-func (c *ResponseCache) SetLiveMatches(matches []api.Match) {
-	c.liveMu.Lock()
-	defer c.liveMu.Unlock()
-
-	c.liveCache = &liveEntry{
-		matches:   matches,
-		expiresAt: time.Now().Add(c.config.LiveMatchesTTL),
-	}
-}
-
-// ClearLive invalidates the live matches cache.
-// Call this to force a refresh on next fetch.
-func (c *ResponseCache) ClearLive() {
-	c.liveMu.Lock()
-	defer c.liveMu.Unlock()
-	c.liveCache = nil
-}

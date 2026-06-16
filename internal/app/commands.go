@@ -122,9 +122,9 @@ func scheduleLiveRefresh(client *fotmob.Client, useMockData bool) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		// Force refresh to bypass cache. Classification (live vs upcoming)
-		// happens inside the fotmob client by status, not by UTC date.
-		client.Cache().ClearLive()
+		// Classification (live vs upcoming) happens inside the fotmob client
+		// by status, not by UTC date. The page-body cache has a short TTL so
+		// the 5-minute refresh always lands on stale entries and refetches.
 		live, upcoming, err := client.LiveAndUpcoming(ctx)
 		if err != nil {
 			return liveRefreshMsg{matches: nil}

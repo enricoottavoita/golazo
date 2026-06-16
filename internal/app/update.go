@@ -784,11 +784,6 @@ func (m model) handleLiveBatchData(msg liveBatchDataMsg) (tea.Model, tea.Cmd) {
 			m.lastError = constants.ErrorLoadFailed
 		}
 
-		// Cache the final result
-		if m.fotmobClient != nil && len(m.liveMatchesBuffer) > 0 {
-			m.fotmobClient.Cache().SetLiveMatches(m.liveMatchesBuffer)
-		}
-
 		// Schedule periodic refresh
 		cmds = append(cmds, scheduleLiveRefresh(m.fotmobClient, m.useMockData))
 
