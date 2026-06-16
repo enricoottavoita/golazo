@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- **Caching** — FotMob league page bodies are now cached for 60s and shared across the live, stats, World Cup, and standings views, reducing redundant network calls during quick navigation.
 
 ### Fixed
 - **Live matches view** — matches that kicked off before the user's UTC midnight (e.g. evening kickoffs for users in the Americas, very common during the World Cup) are no longer dropped from the Live view. Live is now decided by match status, not by UTC calendar day.
