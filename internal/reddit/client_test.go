@@ -116,3 +116,96 @@ func TestSearchReturnsErrBlockedOn403(t *testing.T) {
 		t.Fatalf("Search error %v is not ErrBlocked", err)
 	}
 }
+
+// recordingFetcher captures queries passed to Search so tests can assert on
+// the exact query string searchForGoalOnce constructs (vs. e2e-asserting via
+// httptest, which would re-test url-escaping). Returns whatever results are
+// pre-loaded.
+type recordingFetcher struct {
+	queries []string
+	results []SearchResult
+	err     error
+}
+
+func (r *recordingFetcher) Search(query string, _ int, _ time.Time, _ string) ([]SearchResult, error) {
+	r.queries = append(r.queries, query)
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.results, nil
+}
+
+// TestSearchForGoalOnceQueryFormat pins the single-query format produced by
+// buildGoalQuery / searchForGoalOnce: "<home> <hScore> <aScore> <away>
+// <scorerLast>", with the scorer token omitted when ScorerName is empty.
+// Asserts exactly one fetcher.Search call (strategies 2 and 3 are gone).
+func TestSearchForGoalOnceQueryFormat(t *testing.T) {
+	cases := []struct {
+		name      string
+		goal      GoalInfo
+		wantQuery string
+	}{
+		{
+			name: "scorer present uses last token",
+			goal: GoalInfo{
+				MatchID:    4667791,
+				HomeTeam:   "Iran",
+				AwayTeam:   "New Zealand",
+				HomeScore:  0,
+				AwayScore:  1,
+				ScorerName: "Elijah Just",
+				Minute:     7,
+				IsHomeTeam: false,
+				MatchTime:  time.Now(),
+			},
+			wantQuery: "Iran 0 1 New Zealand Just",
+		},
+		{
+			name: "empty scorer falls back to teams + score",
+			goal: GoalInfo{
+				MatchID:    1,
+				HomeTeam:   "Iran",
+				AwayTeam:   "New Zealand",
+				HomeScore:  1,
+				AwayScore:  1,
+				ScorerName: "",
+				Minute:     50,
+				MatchTime:  time.Now(),
+			},
+			wantQuery: "Iran 1 1 New Zealand",
+		},
+		{
+			name: "scorer with diacritics is folded",
+			goal: GoalInfo{
+				MatchID:    2,
+				HomeTeam:   "Liverpool",
+				AwayTeam:   "Wolves",
+				HomeScore:  2,
+				AwayScore:  0,
+				ScorerName: "Darwin Núñez",
+				Minute:     12,
+				MatchTime:  time.Now(),
+			},
+			wantQuery: "Liverpool 2 0 Wolves Nunez",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fetcher := &recordingFetcher{}
+			client := NewClientWithFetcher(fetcher, &GoalLinkCache{links: make(map[string]GoalLink)})
+
+			_, err := client.searchForGoalOnce(tc.goal)
+			if err != nil {
+				t.Fatalf("searchForGoalOnce returned err: %v", err)
+			}
+			if len(fetcher.queries) != 1 {
+				t.Fatalf("expected exactly 1 fetcher.Search call (single-strategy), got %d: %v",
+					len(fetcher.queries), fetcher.queries)
+			}
+			if fetcher.queries[0] != tc.wantQuery {
+				t.Errorf("query mismatch:\n  got  %q\n  want %q", fetcher.queries[0], tc.wantQuery)
+			}
+		})
+	}
+}

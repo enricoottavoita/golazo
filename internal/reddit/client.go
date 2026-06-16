@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -342,6 +343,22 @@ func (c *Client) searchForGoal(goal GoalInfo) (*GoalLink, error) {
 }
 
 // searchForGoalOnce performs a single search attempt for a goal.
+//
+// Query format: "<home> <homeScore> <awayScore> <away> <scorerLast>".
+// Example for the 7' New Zealand goal in Iran 0-1 New Zealand:
+//
+//	"Iran 0 1 New Zealand Just"
+//
+// This mirrors verbatim the token sequence that appears in r/soccer goal-post
+// titles like "Iran 0 - [1] New Zealand - E. Just 7'" (slug
+// `iran_0_1_new_zealand_e_just_7`). The running score uniquely disambiguates
+// goals within a single match — searching by minute alone is the weakest
+// signal because Reddit's tokenizer handles the apostrophe inconsistently and
+// bare numbers are low-entropy.
+//
+// When ScorerName is empty (own goals, missing data), the scorer token is
+// omitted and matching relies on score + team names. Minute validation lives
+// in findBestMatch via buildMinutePattern.
 func (c *Client) searchForGoalOnce(goal GoalInfo) (*GoalLink, error) {
 	// Log any country-alias variants that will be tried during matching.
 	// Helps diagnose national-team mismatches (e.g., FotMob "Türkiye" vs
@@ -355,142 +372,31 @@ func (c *Client) searchForGoalOnce(goal GoalInfo) (*GoalLink, error) {
 			goal.AwayTeam, aliases, goal.MatchID, goal.Minute))
 	}
 
-	// Strategy 1: Both teams + minute (most specific, try first)
-	query1 := fmt.Sprintf("%s %s %d'", goal.HomeTeam, goal.AwayTeam, goal.Minute)
-	c.DebugLog(fmt.Sprintf("Reddit search query: '%s' for goal %d:%d (%s vs %s)",
-		query1, goal.MatchID, goal.Minute, goal.HomeTeam, goal.AwayTeam))
-	results1, err := c.fetcher.Search(query1, 15, goal.MatchTime, "relevance")
+	query := buildGoalQuery(goal)
+	c.DebugLog(fmt.Sprintf("Reddit search query: %q for goal %d:%d (%s %d-%d %s)",
+		query, goal.MatchID, goal.Minute, goal.HomeTeam, goal.HomeScore, goal.AwayScore, goal.AwayTeam))
+
+	results, err := c.fetcher.Search(query, 15, goal.MatchTime, "relevance")
 	if err != nil {
-		c.DebugLog(fmt.Sprintf("Reddit search failed for query '%s': %v", query1, err))
-	} else {
-		c.DebugLog(fmt.Sprintf("Reddit search returned %d results for query '%s'", len(results1), query1))
-		// Debug: log the first few result titles
-		for i, result := range results1 {
-			if i < 3 { // Log first 3 results
-				c.DebugLog(fmt.Sprintf("Result %d: '%s'", i+1, result.Title))
-			}
-		}
+		c.DebugLog(fmt.Sprintf("Reddit search failed for query %q: %v", query, err))
+		return nil, err
 	}
-	if err == nil {
-		// Check if we found a good match with the first strategy
-		match := findBestMatch(results1, goal)
-		c.DebugLog(fmt.Sprintf("findBestMatch result for goal %d:%d (score %d-%d): %v", goal.MatchID, goal.Minute, goal.HomeScore, goal.AwayScore, match != nil))
-		if match != nil {
-			c.DebugLog(fmt.Sprintf("Found goal link for %d:%d: %s (post: %s)", goal.MatchID, goal.Minute, match.URL, match.PostURL))
-			// Found a match, return it immediately to avoid additional API calls
-			return &GoalLink{
-				MatchID:   goal.MatchID,
-				Minute:    goal.Minute,
-				URL:       match.URL,
-				Title:     match.Title,
-				PostURL:   match.PostURL,
-				FetchedAt: time.Now(),
-			}, nil
+	c.DebugLog(fmt.Sprintf("Reddit search returned %d results for query %q", len(results), query))
+	for i, result := range results {
+		if i < 3 {
+			c.DebugLog(fmt.Sprintf("Result %d: %q", i+1, result.Title))
 		}
 	}
 
-	// Strategy 1 didn't find a match, try broader searches
-	// Only try one additional strategy to balance coverage vs rate limiting
-	var allResults []SearchResult
-	if err == nil {
-		allResults = append(allResults, results1...)
-	}
-
-	// Strategy 2: Try with just the scoring team + minute
-	// Determine which team scored
-	scoringTeam := goal.AwayTeam
-	if goal.IsHomeTeam {
-		scoringTeam = goal.HomeTeam
-	}
-	query2 := fmt.Sprintf("%s %d'", scoringTeam, goal.Minute)
-	c.DebugLog(fmt.Sprintf("Reddit search query (strategy 2): '%s' for goal %d:%d", query2, goal.MatchID, goal.Minute))
-	results2, err := c.fetcher.Search(query2, 15, goal.MatchTime, "relevance")
-	if err != nil {
-		c.DebugLog(fmt.Sprintf("Reddit search failed for strategy 2 query '%s': %v", query2, err))
-	} else {
-		c.DebugLog(fmt.Sprintf("Reddit search returned %d results for strategy 2 query '%s'", len(results2), query2))
-		allResults = append(allResults, results2...)
-	}
-
-	// Remove duplicates based on URL
-	seen := make(map[string]bool)
-	uniqueResults := make([]SearchResult, 0, len(allResults))
-	for _, result := range allResults {
-		if !seen[result.URL] {
-			seen[result.URL] = true
-			uniqueResults = append(uniqueResults, result)
-		}
-	}
-
-	// Check if strategies 1+2 found a match before trying strategy 3
-	match := findBestMatch(uniqueResults, goal)
-	if match != nil {
-		c.DebugLog(fmt.Sprintf("Strategy 1+2 match found for goal %d:%d, skipping strategy 3", goal.MatchID, goal.Minute))
-		c.DebugLog(fmt.Sprintf("Found goal link for %d:%d: %s (post: %s)", goal.MatchID, goal.Minute, match.URL, match.PostURL))
-		return &GoalLink{
-			MatchID:   goal.MatchID,
-			Minute:    goal.Minute,
-			URL:       match.URL,
-			Title:     match.Title,
-			PostURL:   match.PostURL,
-			FetchedAt: time.Now(),
-		}, nil
-	}
-
-	// Strategy 3: Try with short/alternative team names + sort by top (upvotes)
-	// Only runs if strategies 1+2 did not find a match
-	homeShort := strings.TrimSpace(goal.HomeTeamShort)
-	awayShort := strings.TrimSpace(goal.AwayTeamShort)
-
-	// Skip if short names are empty or identical to full names (avoids redundant API call)
-	homeShortDifferent := homeShort != "" && !strings.EqualFold(homeShort, goal.HomeTeam)
-	awayShortDifferent := awayShort != "" && !strings.EqualFold(awayShort, goal.AwayTeam)
-
-	if !homeShortDifferent && !awayShortDifferent {
-		c.DebugLog(fmt.Sprintf("Skipping strategy 3 for goal %d:%d: short names empty or identical to full names", goal.MatchID, goal.Minute))
-		return nil, nil // No match found across all strategies
-	}
-
-	// Build query using short names where they differ, falling back to full names
-	homeQuery := goal.HomeTeam
-	if homeShortDifferent {
-		homeQuery = homeShort
-	}
-	awayQuery := goal.AwayTeam
-	if awayShortDifferent {
-		awayQuery = awayShort
-	}
-
-	query3 := fmt.Sprintf("%s %s %d'", homeQuery, awayQuery, goal.Minute)
-	c.DebugLog(fmt.Sprintf("Reddit search query (strategy 3): '%s' for goal %d:%d", query3, goal.MatchID, goal.Minute))
-	results3, err := c.fetcher.Search(query3, 15, goal.MatchTime, "top")
-	if err != nil {
-		c.DebugLog(fmt.Sprintf("Reddit search failed for strategy 3 query '%s': %v", query3, err))
-	} else {
-		c.DebugLog(fmt.Sprintf("Reddit search returned %d results for strategy 3 query '%s'", len(results3), query3))
-		// Debug: log the first few result titles
-		for i, result := range results3 {
-			if i < 3 { // Log first 3 results
-				c.DebugLog(fmt.Sprintf("Strategy 3 result %d: '%s' (score: %d)", i+1, result.Title, result.Score))
-			}
-		}
-		// Combine with all prior results for best match selection
-		for _, result := range results3 {
-			if !seen[result.URL] {
-				seen[result.URL] = true
-				uniqueResults = append(uniqueResults, result)
-			}
-		}
-	}
-
-	// Find the best matching result across all strategies
-	match = findBestMatch(uniqueResults, goal)
-	c.DebugLog(fmt.Sprintf("findBestMatch result (strategy 3) for goal %d:%d: %v", goal.MatchID, goal.Minute, match != nil))
+	match := findBestMatch(results, goal)
+	c.DebugLog(fmt.Sprintf("findBestMatch result for goal %d:%d (score %d-%d): %v",
+		goal.MatchID, goal.Minute, goal.HomeScore, goal.AwayScore, match != nil))
 	if match == nil {
-		return nil, nil // No match found, but not an error
+		return nil, nil
 	}
 
-	c.DebugLog(fmt.Sprintf("Found goal link (strategy 3) for %d:%d: %s (post: %s)", goal.MatchID, goal.Minute, match.URL, match.PostURL))
+	c.DebugLog(fmt.Sprintf("Found goal link for %d:%d: %s (post: %s)",
+		goal.MatchID, goal.Minute, match.URL, match.PostURL))
 	return &GoalLink{
 		MatchID:   goal.MatchID,
 		Minute:    goal.Minute,
@@ -499,6 +405,42 @@ func (c *Client) searchForGoalOnce(goal GoalInfo) (*GoalLink, error) {
 		PostURL:   match.PostURL,
 		FetchedAt: time.Now(),
 	}, nil
+}
+
+// buildGoalQuery returns the single Reddit search query for a goal:
+//
+//	"<home> <homeScore> <awayScore> <away> <scorerLast>"
+//
+// Falls back to "<home> <homeScore> <awayScore> <away>" when the scorer is
+// unknown (own goals, missing data). The scorer token is the last whitespace-
+// separated component of ScorerName with diacritics folded so the query
+// matches anglicized title spellings (e.g., "Núñez" → "Nunez").
+func buildGoalQuery(goal GoalInfo) string {
+	parts := []string{
+		goal.HomeTeam,
+		strconv.Itoa(goal.HomeScore),
+		strconv.Itoa(goal.AwayScore),
+		goal.AwayTeam,
+	}
+	if last := scorerLastToken(goal.ScorerName); last != "" {
+		parts = append(parts, last)
+	}
+	return strings.Join(parts, " ")
+}
+
+// scorerLastToken returns the last whitespace-separated token of name with
+// diacritics folded. Returns "" when name is empty or has no usable token.
+func scorerLastToken(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	folded := foldDiacritics(name)
+	fields := strings.Fields(folded)
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[len(fields)-1]
 }
 
 // ClearCache clears the goal link cache.
