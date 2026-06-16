@@ -104,6 +104,28 @@ func fetchLeagueFromPage(ctx context.Context, httpClient *http.Client, leagueID 
 	return pageProps, nil
 }
 
+// fetchLeaguePage returns the cached league-page JSON body for the given
+// league if it's still fresh; otherwise applies the rate limiter, fetches the
+// page over HTTP, stores the body in the cache, and returns it.
+//
+// Callers must NOT call rateLimiter.Wait() themselves — this helper owns the
+// wait so cache hits avoid the rate-limit delay entirely.
+func (c *Client) fetchLeaguePage(ctx context.Context, leagueID int) (json.RawMessage, error) {
+	if cached := c.cache.Page(leagueID); cached != nil {
+		c.debugLog("league page: cache hit", "leagueID", leagueID)
+		return cached, nil
+	}
+
+	c.rateLimiter.Wait()
+
+	body, err := fetchLeagueFromPage(ctx, c.httpClient, leagueID)
+	if err != nil {
+		return nil, err
+	}
+	c.cache.SetPage(leagueID, body)
+	return body, nil
+}
+
 // extractPageProps extracts the pageProps JSON from a Next.js page's __NEXT_DATA__ script tag.
 func extractPageProps(html string) (json.RawMessage, error) {
 	const marker = `__NEXT_DATA__`

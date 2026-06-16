@@ -1,7 +1,7 @@
 package fotmob
 
 import (
-	"sync"
+	"encoding/json"
 	"time"
 
 	"github.com/0xjuanma/golazo/internal/api"
@@ -12,9 +12,10 @@ import (
 type CacheConfig struct {
 	MatchesTTL      time.Duration // How long to cache match list results
 	MatchDetailsTTL time.Duration // How long to cache match details
-	LiveMatchesTTL  time.Duration // How long to cache live matches list
+	PageBodyTTL     time.Duration // How long to cache raw FotMob league page JSON bodies
 	MaxMatchesCache int           // Maximum number of date entries to cache
 	MaxDetailsCache int           // Maximum number of match details to cache
+	MaxPageCache    int           // Maximum number of league pages to cache
 }
 
 // DefaultCacheConfig returns sensible defaults for caching.
@@ -22,9 +23,10 @@ func DefaultCacheConfig() CacheConfig {
 	return CacheConfig{
 		MatchesTTL:      15 * time.Minute, // Matches list cache (stats view uses client-side filtering)
 		MatchDetailsTTL: 5 * time.Minute,  // Details for live matches need fresher data
-		LiveMatchesTTL:  2 * time.Minute,  // Live matches list cache (quick nav doesn't re-fetch)
+		PageBodyTTL:     60 * time.Second, // Raw league page bodies — short to keep live data fresh
 		MaxMatchesCache: 10,               // Cache up to 10 date queries
 		MaxDetailsCache: 100,              // Cache up to 100 match details
+		MaxPageCache:    30,               // Cache up to 30 league pages (well above any plausible active-leagues count)
 	}
 }
 
@@ -33,13 +35,7 @@ type ResponseCache struct {
 	config       CacheConfig
 	matchesCache *cache.Map[string, []api.Match]
 	detailsCache *cache.Map[int, *api.MatchDetails]
-	liveMu       sync.RWMutex
-	liveCache    *liveEntry
-}
-
-type liveEntry struct {
-	matches   []api.Match
-	expiresAt time.Time
+	pageCache    *cache.Map[int, json.RawMessage]
 }
 
 // NewResponseCache creates a new cache with the given configuration.
@@ -48,6 +44,7 @@ func NewResponseCache(config CacheConfig) *ResponseCache {
 		config:       config,
 		matchesCache: cache.NewMap[string, []api.Match](config.MatchesTTL, config.MaxMatchesCache),
 		detailsCache: cache.NewMap[int, *api.MatchDetails](config.MatchDetailsTTL, config.MaxDetailsCache),
+		pageCache:    cache.NewMap[int, json.RawMessage](config.PageBodyTTL, config.MaxPageCache),
 	}
 }
 
@@ -90,32 +87,23 @@ func (c *ResponseCache) ClearMatchDetails(matchID int) {
 	c.detailsCache.Delete(matchID)
 }
 
-// LiveMatches retrieves cached live matches, returns nil if not cached or expired.
-func (c *ResponseCache) LiveMatches() []api.Match {
-	c.liveMu.RLock()
-	defer c.liveMu.RUnlock()
-
-	if c.liveCache == nil || time.Now().After(c.liveCache.expiresAt) {
+// Page retrieves a cached league-page JSON body, returns nil if not cached or expired.
+func (c *ResponseCache) Page(leagueID int) json.RawMessage {
+	body, ok := c.pageCache.Get(leagueID)
+	if !ok {
 		return nil
 	}
-	return c.liveCache.matches
+	return body
 }
 
-// SetLiveMatches stores live matches in cache with TTL.
-func (c *ResponseCache) SetLiveMatches(matches []api.Match) {
-	c.liveMu.Lock()
-	defer c.liveMu.Unlock()
-
-	c.liveCache = &liveEntry{
-		matches:   matches,
-		expiresAt: time.Now().Add(c.config.LiveMatchesTTL),
-	}
+// SetPage stores a league-page JSON body in the cache with the configured TTL.
+func (c *ResponseCache) SetPage(leagueID int, body json.RawMessage) {
+	c.pageCache.Set(leagueID, body)
 }
 
-// ClearLive invalidates the live matches cache.
-// Call this to force a refresh on next fetch.
-func (c *ResponseCache) ClearLive() {
-	c.liveMu.Lock()
-	defer c.liveMu.Unlock()
-	c.liveCache = nil
+// ClearPages invalidates all cached league-page bodies. Use this when the
+// caller needs a forced refresh (e.g. user-initiated reload of the live list).
+func (c *ResponseCache) ClearPages() {
+	c.pageCache.Clear()
 }
+

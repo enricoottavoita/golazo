@@ -2,80 +2,151 @@ package fotmob
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/0xjuanma/golazo/internal/api"
 )
 
-// LiveMatches retrieves all currently live matches for today.
-// Fetches matches from supported leagues and filters for those that have started but not finished.
-// Only queries "fixtures" tab since live matches are not in "results" (50% fewer API calls).
-// Results are cached for 2 minutes to avoid redundant fetches on quick navigation.
-func (c *Client) LiveMatches(ctx context.Context) ([]api.Match, error) {
-	// Check cache first (2-min TTL for quick nav in/out)
-	if cached := c.cache.LiveMatches(); cached != nil {
-		return cached, nil
-	}
-
-	today := time.Now()
-
-	// Only query "fixtures" tab - live matches are in fixtures, not results
-	// This reduces API calls from 28 (14 leagues × 2 tabs) to 14 (14 leagues × 1 tab)
-	matches, err := c.MatchesByDateWithTabs(ctx, today, []string{"fixtures"})
-	if err != nil {
-		return nil, fmt.Errorf("fetch matches for date %s: %w", today.Format("2006-01-02"), err)
-	}
-
-	// Filter for live matches only (started but not finished)
-	var liveMatches []api.Match
-	for _, match := range matches {
-		if match.Status == api.MatchStatusLive {
-			liveMatches = append(liveMatches, match)
+// classifyLeagueMatches splits a league's allMatches into currently-live and
+// upcoming sets. "Live" is determined by status only (Started && !Finished &&
+// !Cancelled) and is intentionally date-agnostic — a match that kicked off
+// before the user's UTC midnight is still live during its second half.
+// "Upcoming" is gated to matches scheduled on the same calendar day as `now`
+// in `now`'s timezone, so the upcoming list reflects what the user calls
+// "today" rather than what UTC calls today.
+//
+// The classifier is pure and deterministic given a fixed `now` — pass
+// time.Now() in production and a fixed clock in tests.
+func classifyLeagueMatches(allMatches []fotmobMatch, leagueInfo league, now time.Time) (live, upcoming []api.Match) {
+	loc := now.Location()
+	todayStr := now.Format("2006-01-02")
+	for _, m := range allMatches {
+		if m.Status.UTCTime == "" {
+			continue
 		}
-	}
-
-	// Cache the result
-	c.cache.SetLiveMatches(liveMatches)
-
-	return liveMatches, nil
-}
-
-// LiveMatchesForceRefresh fetches live matches, bypassing the cache.
-// Use this for periodic refreshes to get the latest data.
-func (c *Client) LiveMatchesForceRefresh(ctx context.Context) ([]api.Match, error) {
-	c.cache.ClearLive()
-	return c.LiveMatches(ctx)
-}
-
-// LiveMatchesForLeague fetches live matches for a single league.
-// Used for progressive loading - results appear as each league responds.
-func (c *Client) LiveMatchesForLeague(ctx context.Context, leagueID int) ([]api.Match, error) {
-	today := time.Now()
-	dateStr := today.Format("2006-01-02")
-
-	// Fetch from API for this specific league
-	matches, err := c.MatchesForLeagueAndDate(ctx, leagueID, today, "fixtures")
-	if err != nil {
-		return nil, err
-	}
-
-	// Filter for live matches only
-	var liveMatches []api.Match
-	for _, match := range matches {
-		// Verify match is for today and is live
-		if match.MatchTime != nil {
-			//Compare with local times
-			matchDate := match.MatchTime.Local().Format("2006-01-02")
-			if matchDate == dateStr && match.Status == api.MatchStatusLive {
-				liveMatches = append(liveMatches, match)
+		if m.League.ID == 0 {
+			m.League = leagueInfo
+		}
+		apiM := m.toAPIMatch()
+		switch apiM.Status {
+		case api.MatchStatusLive:
+			live = append(live, apiM)
+		case api.MatchStatusNotStarted:
+			if apiM.MatchTime == nil {
+				continue
 			}
+			if apiM.MatchTime.In(loc).Format("2006-01-02") != todayStr {
+				continue
+			}
+			upcoming = append(upcoming, apiM)
 		}
 	}
+	return live, upcoming
+}
 
-	return liveMatches, nil
+// LiveAndUpcomingForLeague fetches a league's page and returns the matches
+// that are currently live (status-only) along with the matches scheduled for
+// the user's local "today". This replaces the older UTC-date-filtered path
+// that dropped live matches whose UTC date no longer matched the user's UTC
+// "today" (e.g. a 22:00Z kickoff during its second half for a user past UTC
+// midnight).
+func (c *Client) LiveAndUpcomingForLeague(ctx context.Context, leagueID int) (live, upcoming []api.Match, err error) {
+	pageProps, err := c.fetchLeaguePage(ctx, leagueID)
+	if err != nil {
+		c.debugLog("live: league page fetch failed", "leagueID", leagueID, "err", err)
+		return nil, nil, fmt.Errorf("fetch league %d page: %w", leagueID, err)
+	}
+
+	var leagueResponse struct {
+		Details struct {
+			ID          int    `json:"id"`
+			Name        string `json:"name"`
+			Country     string `json:"country"`
+			CountryCode string `json:"countryCode,omitempty"`
+		} `json:"details"`
+		Fixtures struct {
+			AllMatches []fotmobMatch `json:"allMatches"`
+		} `json:"fixtures"`
+	}
+	if err := json.Unmarshal(pageProps, &leagueResponse); err != nil {
+		c.debugLog("live: league page decode failed", "leagueID", leagueID, "err", err)
+		return nil, nil, fmt.Errorf("decode league %d response: %w", leagueID, err)
+	}
+
+	leagueInfo := league{
+		ID:          leagueResponse.Details.ID,
+		Name:        leagueResponse.Details.Name,
+		Country:     leagueResponse.Details.Country,
+		CountryCode: leagueResponse.Details.CountryCode,
+	}
+
+	live, upcoming = classifyLeagueMatches(leagueResponse.Fixtures.AllMatches, leagueInfo, time.Now())
+
+	for _, m := range live {
+		c.StorePageURL(m.ID, m.PageURL)
+	}
+	for _, m := range upcoming {
+		c.StorePageURL(m.ID, m.PageURL)
+	}
+
+	if c.logger != nil {
+		c.debugLog("live: classified league fixtures",
+			"leagueID", leagueID,
+			"league", leagueResponse.Details.Name,
+			"fixturesScanned", len(leagueResponse.Fixtures.AllMatches),
+			"live", len(live),
+			"liveMatches", matchTitles(live),
+			"upcoming", len(upcoming),
+			"upcomingMatches", matchTitles(upcoming),
+		)
+	}
+
+	return live, upcoming, nil
+}
+
+// matchTitles renders matches as a compact "Home vs Away" list for debug logs.
+func matchTitles(matches []api.Match) []string {
+	if len(matches) == 0 {
+		return nil
+	}
+	titles := make([]string, 0, len(matches))
+	for _, m := range matches {
+		titles = append(titles, fmt.Sprintf("%s vs %s", m.HomeTeam.Name, m.AwayTeam.Name))
+	}
+	return titles
+}
+
+// LiveAndUpcoming fetches live and upcoming matches across all active leagues
+// concurrently using the status-only classifier. Best-effort aggregation: a
+// league that errors is skipped, the rest still return.
+func (c *Client) LiveAndUpcoming(ctx context.Context) (live, upcoming []api.Match, err error) {
+	activeLeagues := ActiveLeagues()
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, leagueID := range activeLeagues {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			c.maxConcurrent <- struct{}{}
+			defer func() { <-c.maxConcurrent }()
+
+			liveL, upL, err := c.LiveAndUpcomingForLeague(ctx, id)
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			live = append(live, liveL...)
+			upcoming = append(upcoming, upL...)
+			mu.Unlock()
+		}(leagueID)
+	}
+	wg.Wait()
+	return live, upcoming, nil
 }
 
 // TotalLeagues returns the number of active leagues (respects user settings).

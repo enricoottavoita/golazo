@@ -471,15 +471,18 @@ func (m model) handleLiveMatchesSelection(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.loadMatchDetails(targetMatchID)
 	}
 
-	// Handle refresh key (r) to force refresh current match
+	// Handle refresh key (r):
+	//   - With a match selected → force-refresh that match's details.
+	//   - On the live list with no match open → force-refresh the live list
+	//     itself (clears the page-body cache so a fresh FotMob fetch runs).
 	if msg.String() == "r" {
 		m.debugLog(fmt.Sprintf("Live matches refresh key pressed - matchDetails is nil: %v", m.matchDetails == nil))
 		if m.matchDetails != nil {
 			m.debugLog(fmt.Sprintf("Forcing refresh for match ID: %d in live matches view", m.matchDetails.ID))
 			return m.loadMatchDetailsWithRefresh(m.matchDetails.ID, true)
-		} else {
-			m.debugLog("Cannot refresh - no match details currently loaded")
 		}
+		m.debugLog("Forcing live list refresh (clearing page-body cache)")
+		return m, refreshLiveNow(m.fotmobClient, m.useMockData)
 	}
 
 	return m, listCmd
@@ -678,7 +681,6 @@ func (m model) handleLiveRefresh(msg liveRefreshMsg) (tea.Model, tea.Cmd) {
 
 	// Schedule the next refresh
 	cmds = append(cmds, scheduleLiveRefresh(m.fotmobClient, m.useMockData))
-
 	// Update upcoming matches
 	upcomingDisplay := make([]ui.MatchDisplay, 0, len(msg.upcoming))
 	for _, match := range msg.upcoming {
@@ -720,11 +722,22 @@ func (m model) handleLiveRefresh(msg liveRefreshMsg) (tea.Model, tea.Cmd) {
 	m.selected = newSelected
 	m.liveMatchesList.Select(newSelected)
 
+	// Auto-load the first match's details when the right panel is empty so
+	// the user lands on a populated panel after refresh (e.g. when R
+	// promotes a match to live).
+	if m.matchDetails == nil && len(m.matches) > 0 {
+		m.liveMatchesList.Select(0)
+		updatedModel, loadCmd := m.loadMatchDetails(m.matches[0].ID)
+		if updatedM, ok := updatedModel.(model); ok {
+			m = updatedM
+		}
+		cmds = append(cmds, loadCmd)
+	}
+
 	return m, tea.Batch(cmds...)
 }
 
 // handleLiveBatchData processes parallel batch loading - multiple leagues at once.
-// Results are shown after each batch completes, giving progressive updates while being fast.
 func (m model) handleLiveBatchData(msg liveBatchDataMsg) (tea.Model, tea.Cmd) {
 	// Discard results if load was cancelled (user navigated away)
 	if m.loadCtx != nil && m.loadCtx.Err() != nil {
@@ -762,16 +775,15 @@ func (m model) handleLiveBatchData(msg liveBatchDataMsg) (tea.Model, tea.Cmd) {
 		m.liveMatchesList.SetItems(ui.ToMatchListItems(displayMatches))
 		m.updateLiveListSize()
 
-		// On first batch with matches, select first match and load details
-		if msg.batchIndex == 0 || (len(msg.matches) > 0 && m.matchDetails == nil && len(m.matches) > 0) {
-			if m.selected == 0 && m.matchDetails == nil && len(m.matches) > 0 {
-				m.liveMatchesList.Select(0)
-				updatedModel, loadCmd := m.loadMatchDetails(m.matches[0].ID)
-				if updatedM, ok := updatedModel.(model); ok {
-					m = updatedM
-				}
-				cmds = append(cmds, loadCmd)
+		// Auto-load the first match's details when the right panel is empty
+		// — covers initial load AND late-arriving matches from later batches.
+		if m.matchDetails == nil && len(m.matches) > 0 {
+			m.liveMatchesList.Select(0)
+			updatedModel, loadCmd := m.loadMatchDetails(m.matches[0].ID)
+			if updatedM, ok := updatedModel.(model); ok {
+				m = updatedM
 			}
+			cmds = append(cmds, loadCmd)
 		}
 	}
 
@@ -782,11 +794,6 @@ func (m model) handleLiveBatchData(msg liveBatchDataMsg) (tea.Model, tea.Cmd) {
 
 		if len(m.liveMatchesBuffer) == 0 && len(m.liveUpcomingBuffer) == 0 {
 			m.lastError = constants.ErrorLoadFailed
-		}
-
-		// Cache the final result
-		if m.fotmobClient != nil && len(m.liveMatchesBuffer) > 0 {
-			m.fotmobClient.Cache().SetLiveMatches(m.liveMatchesBuffer)
 		}
 
 		// Schedule periodic refresh
@@ -949,9 +956,11 @@ func (m model) handleStatsDayData(msg statsDayDataMsg) (tea.Model, tea.Cmd) {
 	// Apply filter and update UI immediately with current data
 	m.applyStatsDateFilter()
 
-	// On first day with matches, select first match and load details
-	firstDayWithMatches := msg.dayIndex == 0 && len(m.matches) > 0 && m.matchDetails == nil
-	if firstDayWithMatches {
+	// On day 0 with matches, auto-load the first match into the right panel
+	// so the default "Today" view doesn't show a blank panel. The day-0 gate
+	// keeps later days from overriding what the user is viewing as the
+	// progressive loader brings older results in.
+	if msg.dayIndex == 0 && m.matchDetails == nil && len(m.matches) > 0 {
 		m.selected = 0
 		m.statsMatchesList.Select(0)
 		updatedModel, loadCmd := m.loadStatsMatchDetails(m.matches[0].ID)
