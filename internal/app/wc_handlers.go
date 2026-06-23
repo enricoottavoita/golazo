@@ -60,6 +60,7 @@ func (m model) handleWCGroupsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.wcSubView = wcSubViewBracket
 			return m, tea.ClearScreen
 		}
+		m.wcLastError = "Bracket not available yet — group stage in progress"
 		return m, nil
 
 	case "u":
@@ -145,6 +146,9 @@ func (m model) handleWCGroupGridKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.wcSubView = wcSubViewBracket
 			return m, tea.ClearScreen
 		}
+		m.wcLastError = "Bracket not available yet — group stage in progress"
+		m.wcSubView = wcSubViewGroups
+		return m, tea.ClearScreen
 
 	case "u":
 		m.wcSubView = wcSubViewUpcoming
