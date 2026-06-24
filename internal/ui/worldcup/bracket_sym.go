@@ -109,14 +109,13 @@ func symSideBySide(left, right string) string {
 func symCompact(mu api.WCMatchup) string {
 	home := MatchupTeamLabel(mu.HomeShort, mu.HomeTeam, mu.TBDHome)
 	away := MatchupTeamLabel(mu.AwayShort, mu.AwayTeam, mu.TBDAway)
-	hW := mu.WinnerID != nil && *mu.WinnerID == mu.HomeTeamID
-	aW := mu.WinnerID != nil && *mu.WinnerID == mu.AwayTeamID
 	hs, as_ := MatchLineStyle, MatchLineStyle
-	if hW {
-		hs = WinnerStyle
-	}
-	if aW {
-		as_ = WinnerStyle
+	if mu.WinnerID != nil {
+		if *mu.WinnerID == mu.HomeTeamID {
+			hs, as_ = WinnerStyle, EliminatedStyle
+		} else {
+			hs, as_ = EliminatedStyle, WinnerStyle
+		}
 	}
 	var score string
 	if mu.HomeScore != nil && mu.AwayScore != nil {
@@ -152,17 +151,19 @@ func symTriplet(lmu, rmu api.WCMatchup) []string {
 	rw := nextRoundTeamName(rmu)
 
 	c := ConnectorStyle.Render
-	t := MatchLineStyle.Render
 	w := WinnerStyle.Render
 	indent := strings.Repeat(" ", labelTargetWidth+3)
 	gap := "     "
 
-	l0 := t(lh) + c(" ─┐")
+	l0 := symTeamRender(lmu, true, MatchLineStyle)(lh) + c(" ─┐")
 	l1 := indent + c("├─ ") + w(lw)
-	l2 := t(la) + c(" ─┘")
-	r0 := c("┌─ ") + t(rh)
+	l2 := symTeamRender(lmu, false, MatchLineStyle)(la) + c(" ─┘")
+	// Offset r0/r2 so ┌/└ align with ┤ in r1.
+	// r1 = w(rw)(6) + " ─┤"(3) = 9 chars → ┤ at col 8; match by padding r0/r2 by same width.
+	rwOff := strings.Repeat(" ", lipgloss.Width(w(rw))+2)
+	r0 := rwOff + c("┌─ ") + symTeamRender(rmu, true, MatchLineStyle)(rh)
 	r1 := w(rw) + c(" ─┤")
-	r2 := c("└─ ") + t(ra)
+	r2 := rwOff + c("└─ ") + symTeamRender(rmu, false, MatchLineStyle)(ra)
 
 	mw := lipgloss.Width(l0)
 	if lipgloss.Width(l1) > mw {
@@ -208,29 +209,16 @@ func symTab1(wcData *api.WorldCupData) string {
 //	col1: QF connector (9-20: sp9 + "├─ " + label6 + " ─┐"3 = 21 chars)
 //	sfCol: SF connector │ at position 20
 func sym4Level(r16, qf, sf, fin []api.WCMatchup, wcData *api.WorldCupData) string {
-	lH := [4]string{
-		MatchupTeamLabel(symGet(r16, 0).HomeShort, symGet(r16, 0).HomeTeam, symGet(r16, 0).TBDHome),
-		MatchupTeamLabel(symGet(r16, 1).HomeShort, symGet(r16, 1).HomeTeam, symGet(r16, 1).TBDHome),
-		MatchupTeamLabel(symGet(r16, 2).HomeShort, symGet(r16, 2).HomeTeam, symGet(r16, 2).TBDHome),
-		MatchupTeamLabel(symGet(r16, 3).HomeShort, symGet(r16, 3).HomeTeam, symGet(r16, 3).TBDHome),
+	var lH, lA, rH, rA [4]string
+	for i := range lH {
+		mu := symGet(r16, i)
+		lH[i] = symTeamRender(mu, true, MatchLineStyle)(MatchupTeamLabel(mu.HomeShort, mu.HomeTeam, mu.TBDHome))
+		lA[i] = symTeamRender(mu, false, MatchLineStyle)(MatchupTeamLabel(mu.AwayShort, mu.AwayTeam, mu.TBDAway))
 	}
-	lA := [4]string{
-		MatchupTeamLabel(symGet(r16, 0).AwayShort, symGet(r16, 0).AwayTeam, symGet(r16, 0).TBDAway),
-		MatchupTeamLabel(symGet(r16, 1).AwayShort, symGet(r16, 1).AwayTeam, symGet(r16, 1).TBDAway),
-		MatchupTeamLabel(symGet(r16, 2).AwayShort, symGet(r16, 2).AwayTeam, symGet(r16, 2).TBDAway),
-		MatchupTeamLabel(symGet(r16, 3).AwayShort, symGet(r16, 3).AwayTeam, symGet(r16, 3).TBDAway),
-	}
-	rH := [4]string{
-		MatchupTeamLabel(symGet(r16, 4).HomeShort, symGet(r16, 4).HomeTeam, symGet(r16, 4).TBDHome),
-		MatchupTeamLabel(symGet(r16, 5).HomeShort, symGet(r16, 5).HomeTeam, symGet(r16, 5).TBDHome),
-		MatchupTeamLabel(symGet(r16, 6).HomeShort, symGet(r16, 6).HomeTeam, symGet(r16, 6).TBDHome),
-		MatchupTeamLabel(symGet(r16, 7).HomeShort, symGet(r16, 7).HomeTeam, symGet(r16, 7).TBDHome),
-	}
-	rA := [4]string{
-		MatchupTeamLabel(symGet(r16, 4).AwayShort, symGet(r16, 4).AwayTeam, symGet(r16, 4).TBDAway),
-		MatchupTeamLabel(symGet(r16, 5).AwayShort, symGet(r16, 5).AwayTeam, symGet(r16, 5).TBDAway),
-		MatchupTeamLabel(symGet(r16, 6).AwayShort, symGet(r16, 6).AwayTeam, symGet(r16, 6).TBDAway),
-		MatchupTeamLabel(symGet(r16, 7).AwayShort, symGet(r16, 7).AwayTeam, symGet(r16, 7).TBDAway),
+	for i := range rH {
+		mu := symGet(r16, 4+i)
+		rH[i] = symTeamRender(mu, true, MatchLineStyle)(MatchupTeamLabel(mu.HomeShort, mu.HomeTeam, mu.TBDHome))
+		rA[i] = symTeamRender(mu, false, MatchLineStyle)(MatchupTeamLabel(mu.AwayShort, mu.AwayTeam, mu.TBDAway))
 	}
 
 	// R16 winners advance into QF slots
@@ -250,76 +238,67 @@ func sym4Level(r16, qf, sf, fin []api.WCMatchup, wcData *api.WorldCupData) strin
 	rSFa := nextRoundTeamName(symGet(qf, 3))
 
 	c := ConnectorStyle.Render
-	t := MatchLineStyle.Render
-	w := WinnerStyle.Render
 
 	// sfCol=20: │ at visual position 20 in left block.
 	// After label(6)+" ─┐"(3)=9 chars: need 11 more spaces to reach col 20.
-	qfSp := strings.Repeat(" ", 9)  // indent before QF ├─
-	sfSp := strings.Repeat(" ", 20) // indent before SF ├─
+	qfSp := strings.Repeat(" ", 9)   // indent before QF ├─
+	sfSp := strings.Repeat(" ", 20)  // indent before SF ├─
 	sfMid := strings.Repeat(" ", 11) // filler between R16 connector end (col9) and SF │ (col20)
 
 	ll := make([]string, 15)
-	ll[0] = t(lH[0]) + c(" ─┐")
-	ll[1] = qfSp + c("├─ ") + w(lQF0h) + c(" ─┐")
-	ll[2] = t(lA[0]) + c(" ─┘") + sfMid + c("│")
-	ll[3] = sfSp + c("├─ ") + w(lSFh)
-	ll[4] = t(lH[1]) + c(" ─┐") + sfMid + c("│")
-	ll[5] = qfSp + c("├─ ") + w(lQF0a) + c(" ─┘")
-	ll[6] = t(lA[1]) + c(" ─┘")
+	ll[0] = lH[0] + c(" ─┐")
+	ll[1] = qfSp + c("├─ ") + symTeamRender(symGet(qf, 0), true, WinnerStyle)(lQF0h) + c(" ─┐")
+	ll[2] = lA[0] + c(" ─┘") + sfMid + c("│")
+	ll[3] = sfSp + c("├─ ") + symTeamRender(symGet(sf, 0), true, WinnerStyle)(lSFh)
+	ll[4] = lH[1] + c(" ─┐") + sfMid + c("│")
+	ll[5] = qfSp + c("├─ ") + symTeamRender(symGet(qf, 0), false, WinnerStyle)(lQF0a) + c(" ─┘")
+	ll[6] = lA[1] + c(" ─┘")
 	ll[7] = sfSp + c("│")
-	ll[8] = t(lH[2]) + c(" ─┐") + sfMid + c("│")
-	ll[9] = qfSp + c("├─ ") + w(lQF1h) + c(" ─┐")
-	ll[10] = t(lA[2]) + c(" ─┘") + sfMid + c("│")
-	ll[11] = sfSp + c("├─ ") + w(lSFa)
-	ll[12] = t(lH[3]) + c(" ─┐") + sfMid + c("│")
-	ll[13] = qfSp + c("├─ ") + w(lQF1a) + c(" ─┘")
-	ll[14] = t(lA[3]) + c(" ─┘")
+	ll[8] = lH[2] + c(" ─┐") + sfMid + c("│")
+	ll[9] = qfSp + c("├─ ") + symTeamRender(symGet(qf, 1), true, WinnerStyle)(lQF1h) + c(" ─┐")
+	ll[10] = lA[2] + c(" ─┘") + sfMid + c("│")
+	ll[11] = sfSp + c("├─ ") + symTeamRender(symGet(sf, 0), false, WinnerStyle)(lSFa)
+	ll[12] = lH[3] + c(" ─┐") + sfMid + c("│")
+	ll[13] = qfSp + c("├─ ") + symTeamRender(symGet(qf, 1), false, WinnerStyle)(lQF1a) + c(" ─┘")
+	ll[14] = lA[3] + c(" ─┘")
 
 	// Right side: SF column at col 0, QF bracket ┌/┤/└ at col 11.
-	// QF winner rows use ┌─/└─ at col 0 (extending the SF bar) + label + ─┤/─┘ at col 11.
 	// "┌─ "(3) + label(6) + " ─┤"(3) = 12 chars → ┤ at col 11.
 	// rSp = 10: │(col 0) + 10sp + ┌─/└─ lands at col 11.
 	rSp := strings.Repeat(" ", 10)
 	rr := make([]string, 15)
-	rr[0] = " " + rSp + c("┌─ ") + t(rH[0])
-	rr[1] = c("┌─ ") + w(rQF2h) + c(" ─┤")
-	rr[2] = c("│") + rSp + c("└─ ") + t(rA[0])
-	rr[3] = c("┤")
-	rr[4] = c("│") + rSp + c("┌─ ") + t(rH[1])
-	rr[5] = c("└─ ") + w(rQF2a) + c(" ─┘")
-	rr[6] = " " + rSp + c("└─ ") + t(rA[1])
+	copy(rr, symRightQFBlock(
+		rH[0], rA[0], symTeamRender(symGet(qf, 2), true, WinnerStyle)(rQF2h),
+		rH[1], rA[1], symTeamRender(symGet(qf, 2), false, WinnerStyle)(rQF2a),
+		rSp,
+	))
 	rr[7] = c("│")
-	rr[8] = c("│") + rSp + c("┌─ ") + t(rH[2])
-	rr[9] = c("┌─ ") + w(rQF3h) + c(" ─┤")
-	rr[10] = c("│") + rSp + c("└─ ") + t(rA[2])
-	rr[11] = c("┤")
-	rr[12] = c("│") + rSp + c("┌─ ") + t(rH[3])
-	rr[13] = c("└─ ") + w(rQF3a) + c(" ─┘")
-	rr[14] = " " + rSp + c("└─ ") + t(rA[3])
+	copy(rr[8:], symRightQFBlock(
+		rH[2], rA[2], symTeamRender(symGet(qf, 3), true, WinnerStyle)(rQF3h),
+		rH[3], rA[3], symTeamRender(symGet(qf, 3), false, WinnerStyle)(rQF3a),
+		rSp,
+	))
 
 	finalLabel := symFinalLabel(fin, wcData)
-	centers := symBuildCenters(15, finalLabel, map[int]string{3: w(rSFh), 11: w(rSFa)})
+	centers := symBuildCenters(15, finalLabel, map[int]string{
+		3:  symTeamRender(symGet(sf, 1), true, WinnerStyle)(rSFh),
+		11: symTeamRender(symGet(sf, 1), false, WinnerStyle)(rSFa),
+	})
 	return symJoin(ll, rr, 15, centers)
 }
 
 // sym2Level builds a 7-line symmetric bracket for QF → SF → Final (2022 format).
 func sym2Level(qf, sf, fin []api.WCMatchup, wcData *api.WorldCupData) string {
-	lH := [2]string{
-		MatchupTeamLabel(symGet(qf, 0).HomeShort, symGet(qf, 0).HomeTeam, symGet(qf, 0).TBDHome),
-		MatchupTeamLabel(symGet(qf, 1).HomeShort, symGet(qf, 1).HomeTeam, symGet(qf, 1).TBDHome),
+	var lH, lA, rH, rA [2]string
+	for i := range lH {
+		mu := symGet(qf, i)
+		lH[i] = symTeamRender(mu, true, MatchLineStyle)(MatchupTeamLabel(mu.HomeShort, mu.HomeTeam, mu.TBDHome))
+		lA[i] = symTeamRender(mu, false, MatchLineStyle)(MatchupTeamLabel(mu.AwayShort, mu.AwayTeam, mu.TBDAway))
 	}
-	lA := [2]string{
-		MatchupTeamLabel(symGet(qf, 0).AwayShort, symGet(qf, 0).AwayTeam, symGet(qf, 0).TBDAway),
-		MatchupTeamLabel(symGet(qf, 1).AwayShort, symGet(qf, 1).AwayTeam, symGet(qf, 1).TBDAway),
-	}
-	rH := [2]string{
-		MatchupTeamLabel(symGet(qf, 2).HomeShort, symGet(qf, 2).HomeTeam, symGet(qf, 2).TBDHome),
-		MatchupTeamLabel(symGet(qf, 3).HomeShort, symGet(qf, 3).HomeTeam, symGet(qf, 3).TBDHome),
-	}
-	rA := [2]string{
-		MatchupTeamLabel(symGet(qf, 2).AwayShort, symGet(qf, 2).AwayTeam, symGet(qf, 2).TBDAway),
-		MatchupTeamLabel(symGet(qf, 3).AwayShort, symGet(qf, 3).AwayTeam, symGet(qf, 3).TBDAway),
+	for i := range rH {
+		mu := symGet(qf, 2+i)
+		rH[i] = symTeamRender(mu, true, MatchLineStyle)(MatchupTeamLabel(mu.HomeShort, mu.HomeTeam, mu.TBDHome))
+		rA[i] = symTeamRender(mu, false, MatchLineStyle)(MatchupTeamLabel(mu.AwayShort, mu.AwayTeam, mu.TBDAway))
 	}
 
 	lQF0w := nextRoundTeamName(symGet(qf, 0))
@@ -330,8 +309,6 @@ func sym2Level(qf, sf, fin []api.WCMatchup, wcData *api.WorldCupData) string {
 	rSFw := nextRoundTeamName(symGet(sf, 1))
 
 	c := ConnectorStyle.Render
-	t := MatchLineStyle.Render
-	w := WinnerStyle.Render
 
 	qfSp := strings.Repeat(" ", 9)
 	sfSp := strings.Repeat(" ", 20)
@@ -339,25 +316,22 @@ func sym2Level(qf, sf, fin []api.WCMatchup, wcData *api.WorldCupData) string {
 	rSp := strings.Repeat(" ", 10)
 
 	ll := make([]string, 7)
-	ll[0] = t(lH[0]) + c(" ─┐")
-	ll[1] = qfSp + c("├─ ") + w(lQF0w) + c(" ─┐")
-	ll[2] = t(lA[0]) + c(" ─┘") + sfMid + c("│")
-	ll[3] = sfSp + c("├─ ") + w(lSFw)
-	ll[4] = t(lH[1]) + c(" ─┐") + sfMid + c("│")
-	ll[5] = qfSp + c("├─ ") + w(lQF1w) + c(" ─┘")
-	ll[6] = t(lA[1]) + c(" ─┘")
+	ll[0] = lH[0] + c(" ─┐")
+	ll[1] = qfSp + c("├─ ") + symTeamRender(symGet(sf, 0), true, WinnerStyle)(lQF0w) + c(" ─┐")
+	ll[2] = lA[0] + c(" ─┘") + sfMid + c("│")
+	ll[3] = sfSp + c("├─ ") + WinnerStyle.Render(lSFw)
+	ll[4] = lH[1] + c(" ─┐") + sfMid + c("│")
+	ll[5] = qfSp + c("├─ ") + symTeamRender(symGet(sf, 0), false, WinnerStyle)(lQF1w) + c(" ─┘")
+	ll[6] = lA[1] + c(" ─┘")
 
-	rr := make([]string, 7)
-	rr[0] = " " + rSp + c("┌─ ") + t(rH[0])
-	rr[1] = c("┌─ ") + w(rQF2w) + c(" ─┤")
-	rr[2] = c("│") + rSp + c("└─ ") + t(rA[0])
-	rr[3] = c("┤")
-	rr[4] = c("│") + rSp + c("┌─ ") + t(rH[1])
-	rr[5] = c("└─ ") + w(rQF3w) + c(" ─┘")
-	rr[6] = " " + rSp + c("└─ ") + t(rA[1])
+	rr := symRightQFBlock(
+		rH[0], rA[0], symTeamRender(symGet(sf, 1), true, WinnerStyle)(rQF2w),
+		rH[1], rA[1], symTeamRender(symGet(sf, 1), false, WinnerStyle)(rQF3w),
+		rSp,
+	)
 
 	finalLabel := symFinalLabel(fin, wcData)
-	centers := symBuildCenters(7, finalLabel, map[int]string{3: w(rSFw)})
+	centers := symBuildCenters(7, finalLabel, map[int]string{3: WinnerStyle.Render(rSFw)})
 	return symJoin(ll, rr, 7, centers)
 }
 
@@ -466,10 +440,40 @@ func symJoin(ll, rr []string, n int, centers []string) string {
 	return strings.Join(lines, "\n")
 }
 
+// symRightQFBlock builds the 7-line right-side bracket for a pair of QF matches.
+// topH/topA and botH/botA are pre-styled team labels; winTop/winBot are pre-styled
+// winner labels. rSp is the spacing between the SF column (col 0) and the QF arm.
+// The returned lines slot directly into rr[0..6] or rr[8..14].
+func symRightQFBlock(topH, topA, winTop, botH, botA, winBot, rSp string) []string {
+	c := ConnectorStyle.Render
+	return []string{
+		" " + rSp + c("┌─ ") + topH,
+		c("┌─ ") + winTop + c(" ─┤"),
+		c("│") + rSp + c("└─ ") + topA,
+		c("┤"),
+		c("│") + rSp + c("┌─ ") + botH,
+		c("└─ ") + winBot + c(" ─┘"),
+		" " + rSp + c("└─ ") + botA,
+	}
+}
+
 // symGet safely indexes into a matchup slice, returning a TBD matchup if out of bounds.
 func symGet(mus []api.WCMatchup, i int) api.WCMatchup {
 	if i >= 0 && i < len(mus) {
 		return mus[i]
 	}
 	return api.WCMatchup{TBDHome: true, TBDAway: true}
+}
+
+// symTeamRender returns a render func that applies baseStyle normally, but
+// switches to EliminatedStyle when the match is settled and this team lost.
+func symTeamRender(mu api.WCMatchup, isHome bool, baseStyle lipgloss.Style) func(string) string {
+	style := baseStyle
+	if mu.WinnerID != nil {
+		homeWon := *mu.WinnerID == mu.HomeTeamID
+		if homeWon != isHome {
+			style = EliminatedStyle
+		}
+	}
+	return func(s string) string { return style.Render(s) }
 }
