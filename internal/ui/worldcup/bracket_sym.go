@@ -276,27 +276,31 @@ func sym4Level(r16, qf, sf, fin []api.WCMatchup, wcData *api.WorldCupData) strin
 	ll[13] = qfSp + c("├─ ") + w(lQF1a) + c(" ─┘")
 	ll[14] = t(lA[3]) + c(" ─┘")
 
-	// Right side: SF connector │ at position 0, bracket opens leftward.
-	// "┌─ " + team (R16 teams), w(label) + " ─┤" (QF winner node).
-	rSp := strings.Repeat(" ", 9) // gap between SF │ and ┌─/└─ or QF label
+	// Right side: SF column at col 0, QF bracket ┌/┤/└ at col 11.
+	// QF winner rows use ┌─/└─ at col 0 (extending the SF bar) + label + ─┤/─┘ at col 11.
+	// "┌─ "(3) + label(6) + " ─┤"(3) = 12 chars → ┤ at col 11.
+	// rSp = 10: │(col 0) + 10sp + ┌─/└─ lands at col 11.
+	rSp := strings.Repeat(" ", 10)
 	rr := make([]string, 15)
 	rr[0] = " " + rSp + c("┌─ ") + t(rH[0])
-	rr[1] = " " + w(rQF2h) + c(" ─┤")
+	rr[1] = c("┌─ ") + w(rQF2h) + c(" ─┤")
 	rr[2] = c("│") + rSp + c("└─ ") + t(rA[0])
-	rr[3] = c("├─ ") + w(rSFh)
+	rr[3] = c("┤")
 	rr[4] = c("│") + rSp + c("┌─ ") + t(rH[1])
-	rr[5] = " " + w(rQF2a) + c(" ─┘")
+	rr[5] = c("└─ ") + w(rQF2a) + c(" ─┘")
 	rr[6] = " " + rSp + c("└─ ") + t(rA[1])
 	rr[7] = c("│")
 	rr[8] = c("│") + rSp + c("┌─ ") + t(rH[2])
-	rr[9] = " " + w(rQF3h) + c(" ─┤")
+	rr[9] = c("┌─ ") + w(rQF3h) + c(" ─┤")
 	rr[10] = c("│") + rSp + c("└─ ") + t(rA[2])
-	rr[11] = c("├─ ") + w(rSFa)
+	rr[11] = c("┤")
 	rr[12] = c("│") + rSp + c("┌─ ") + t(rH[3])
-	rr[13] = " " + w(rQF3a) + c(" ─┘")
+	rr[13] = c("└─ ") + w(rQF3a) + c(" ─┘")
 	rr[14] = " " + rSp + c("└─ ") + t(rA[3])
 
-	return symJoin(ll, rr, 15, symFinalLabel(fin, wcData))
+	finalLabel := symFinalLabel(fin, wcData)
+	centers := symBuildCenters(15, finalLabel, map[int]string{3: w(rSFh), 11: w(rSFa)})
+	return symJoin(ll, rr, 15, centers)
 }
 
 // sym2Level builds a 7-line symmetric bracket for QF → SF → Final (2022 format).
@@ -332,7 +336,7 @@ func sym2Level(qf, sf, fin []api.WCMatchup, wcData *api.WorldCupData) string {
 	qfSp := strings.Repeat(" ", 9)
 	sfSp := strings.Repeat(" ", 20)
 	sfMid := strings.Repeat(" ", 11)
-	rSp := strings.Repeat(" ", 9)
+	rSp := strings.Repeat(" ", 10)
 
 	ll := make([]string, 7)
 	ll[0] = t(lH[0]) + c(" ─┐")
@@ -345,14 +349,16 @@ func sym2Level(qf, sf, fin []api.WCMatchup, wcData *api.WorldCupData) string {
 
 	rr := make([]string, 7)
 	rr[0] = " " + rSp + c("┌─ ") + t(rH[0])
-	rr[1] = " " + w(rQF2w) + c(" ─┤")
+	rr[1] = c("┌─ ") + w(rQF2w) + c(" ─┤")
 	rr[2] = c("│") + rSp + c("└─ ") + t(rA[0])
-	rr[3] = c("├─ ") + w(rSFw)
+	rr[3] = c("┤")
 	rr[4] = c("│") + rSp + c("┌─ ") + t(rH[1])
-	rr[5] = " " + w(rQF3w) + c(" ─┘")
+	rr[5] = c("└─ ") + w(rQF3w) + c(" ─┘")
 	rr[6] = " " + rSp + c("└─ ") + t(rA[1])
 
-	return symJoin(ll, rr, 7, symFinalLabel(fin, wcData))
+	finalLabel := symFinalLabel(fin, wcData)
+	centers := symBuildCenters(7, finalLabel, map[int]string{3: w(rSFw)})
+	return symJoin(ll, rr, 7, centers)
 }
 
 // symFinalLabel returns the center line label for the Final matchup.
@@ -378,12 +384,64 @@ func symFinalLabel(fin []api.WCMatchup, wcData *api.WorldCupData) string {
 	return ScoreStyle.Render("── FINAL ──")
 }
 
-// symJoin combines left and right line slices with a fixed left-pad and a center label at midpoint.
-func symJoin(ll, rr []string, n int, centerLabel string) string {
-	const leftWidth = 32
+// symBuildCenters returns n center strings of width centerWidth.
+// midLabel is centered at the midpoint row.
+// rightSF maps row → styled label for right-side SF winners: each label is right-aligned
+// in center with " ─" appended (the ─ arm leads into the rr[row]="┤" connector).
+// When a row is both midpoint AND in rightSF (7-line bracket), both fit in the 22 chars.
+func symBuildCenters(n int, midLabel string, rightSF map[int]string) []string {
 	const centerWidth = 22
 	mid := n / 2
+	centers := make([]string, n)
+	for i := range centers {
+		rsfLabel, hasSF := rightSF[i]
+		isMid := i == mid
+		sfArm := ConnectorStyle.Render(" ─") // 2-char arm connecting center to rr[row]="┤"
+		switch {
+		case hasSF && isMid:
+			// Midpoint row doubles as SF row (7-line): fit both labels in 22 chars.
+			sfPart := rsfLabel + sfArm
+			sfW := lipgloss.Width(sfPart)
+			rem := centerWidth - sfW
+			cw := lipgloss.Width(midLabel)
+			lp := (rem - cw) / 2
+			if lp < 0 {
+				lp = 0
+			}
+			rp := rem - cw - lp
+			if rp < 0 {
+				rp = 0
+			}
+			centers[i] = strings.Repeat(" ", lp) + midLabel + strings.Repeat(" ", rp) + sfPart
+		case hasSF:
+			sfPart := rsfLabel + sfArm
+			sfW := lipgloss.Width(sfPart)
+			pad := centerWidth - sfW
+			if pad < 0 {
+				pad = 0
+			}
+			centers[i] = strings.Repeat(" ", pad) + sfPart
+		case isMid:
+			cw := lipgloss.Width(midLabel)
+			side := (centerWidth - cw) / 2
+			if side < 0 {
+				side = 0
+			}
+			rside := centerWidth - cw - side
+			if rside < 0 {
+				rside = 0
+			}
+			centers[i] = strings.Repeat(" ", side) + midLabel + strings.Repeat(" ", rside)
+		default:
+			centers[i] = strings.Repeat(" ", centerWidth)
+		}
+	}
+	return centers
+}
 
+// symJoin combines left and right line slices using pre-computed per-row center strings.
+func symJoin(ll, rr []string, n int, centers []string) string {
+	const leftWidth = 32
 	lines := make([]string, n)
 	for i := 0; i < n; i++ {
 		left := ""
@@ -394,25 +452,15 @@ func symJoin(ll, rr []string, n int, centerLabel string) string {
 		if i < len(rr) {
 			right = rr[i]
 		}
-
 		lw := lipgloss.Width(left)
 		padL := ""
 		if lw < leftWidth {
 			padL = strings.Repeat(" ", leftWidth-lw)
 		}
-
-		var center string
-		if i == mid {
-			cw := lipgloss.Width(centerLabel)
-			side := (centerWidth - cw) / 2
-			if side < 0 {
-				side = 0
-			}
-			center = strings.Repeat(" ", side) + centerLabel + strings.Repeat(" ", side)
-		} else {
-			center = strings.Repeat(" ", centerWidth)
+		center := ""
+		if i < len(centers) {
+			center = centers[i]
 		}
-
 		lines[i] = left + padL + center + right
 	}
 	return strings.Join(lines, "\n")
