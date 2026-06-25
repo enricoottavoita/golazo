@@ -13,6 +13,7 @@ import (
 )
 
 // wcPageResponse is the parsed shape of FotMob's World Cup league page __NEXT_DATA__.
+// FotMob serves playoff data at pageProps.playoff (top-level), not pageProps.overview.playoff.
 type wcPageResponse struct {
 	Table []struct {
 		Data struct {
@@ -26,9 +27,9 @@ type wcPageResponse struct {
 			} `json:"tables"`
 		} `json:"data"`
 	} `json:"table"`
+	Playoff  wcPlayoff `json:"playoff"`
 	Overview struct {
-		Playoff wcPlayoff `json:"playoff"`
-		Season  string    `json:"season"`
+		SelectedSeason string `json:"selectedSeason"`
 	} `json:"overview"`
 }
 
@@ -49,17 +50,19 @@ type wcMatchupRaw struct {
 	AwayTeam          string `json:"awayTeam"`
 	AwayTeamID        int    `json:"awayTeamId"`
 	AwayTeamShortName string `json:"awayTeamShortName"`
-	HomeScore         int    `json:"homeScore"`
-	AwayScore         int    `json:"awayScore"`
-	Winner            int    `json:"winner"`
 	TBDTeam1          bool   `json:"tbdTeam1"`
 	TBDTeam2          bool   `json:"tbdTeam2"`
 	Matches           []struct {
+		Home struct {
+			Score  int  `json:"score"`
+			Winner bool `json:"winner"`
+		} `json:"home"`
+		Away struct {
+			Score  int  `json:"score"`
+			Winner bool `json:"winner"`
+		} `json:"away"`
 		Status struct {
-			Reason struct {
-				Short string `json:"short"`
-			} `json:"reason"`
-			Finished *bool `json:"finished"`
+			Finished bool `json:"finished"`
 		} `json:"status"`
 	} `json:"matches"`
 }
@@ -87,11 +90,11 @@ func (c *Client) WorldCupData(ctx context.Context, season string) (*api.WorldCup
 	}
 
 	groups := parseWCGroups(resp)
-	rounds, bronze := parseWCBracket(resp.Overview.Playoff)
+	rounds, bronze := parseWCBracket(resp.Playoff)
 
 	s := season
-	if s == "" && resp.Overview.Season != "" {
-		s = resp.Overview.Season
+	if s == "" && resp.Overview.SelectedSeason != "" {
+		s = resp.Overview.SelectedSeason
 	}
 
 	wcData := &api.WorldCupData{
@@ -283,19 +286,18 @@ func convertMatchup(r wcMatchupRaw) api.WCMatchup {
 		TBDAway:    r.TBDTeam2,
 	}
 
-	// Only set scores if at least one match has been played
-	if len(r.Matches) > 0 {
-		finished := r.Matches[0].Status.Finished
-		if finished != nil && *finished {
-			m.HomeScore = intPtr(r.HomeScore)
-			m.AwayScore = intPtr(r.AwayScore)
-		}
-	}
+	if len(r.Matches) > 0 && r.Matches[0].Status.Finished {
+		m.HomeScore = intPtr(r.Matches[0].Home.Score)
+		m.AwayScore = intPtr(r.Matches[0].Away.Score)
 
-	if r.Winner != 0 {
-		m.WinnerID = intPtr(r.Winner)
-		// Detect penalties: score is level at final whistle but there's a winner
-		if m.HomeScore != nil && m.AwayScore != nil && *m.HomeScore == *m.AwayScore {
+		if r.Matches[0].Home.Winner {
+			m.WinnerID = intPtr(r.HomeTeamID)
+		} else if r.Matches[0].Away.Winner {
+			m.WinnerID = intPtr(r.AwayTeamID)
+		}
+
+		// Detect penalties: scores level at final whistle but there's a winner
+		if m.WinnerID != nil && *m.HomeScore == *m.AwayScore {
 			m.IsPenalties = true
 		}
 	}

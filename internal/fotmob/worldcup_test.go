@@ -331,34 +331,30 @@ func buildMockWCPageResponse(numGroups int) wcPageResponse {
 }
 
 // makeMockMatchup creates a finished wcMatchupRaw.
-func makeMockMatchup(homeID, awayID, homeScore, awayScore, winnerID int, penalties bool) wcMatchupRaw {
-	finished := true
-	mu := wcMatchupRaw{
+func makeMockMatchup(homeID, awayID, homeScore, awayScore, winnerID int, _ bool) wcMatchupRaw {
+	return wcMatchupRaw{
 		HomeTeam:   "Home",
 		HomeTeamID: homeID,
 		AwayTeam:   "Away",
 		AwayTeamID: awayID,
-		HomeScore:  homeScore,
-		AwayScore:  awayScore,
-		Winner:     winnerID,
 		Matches: []struct {
+			Home struct {
+				Score  int  `json:"score"`
+				Winner bool `json:"winner"`
+			} `json:"home"`
+			Away struct {
+				Score  int  `json:"score"`
+				Winner bool `json:"winner"`
+			} `json:"away"`
 			Status struct {
-				Reason struct {
-					Short string `json:"short"`
-				} `json:"reason"`
-				Finished *bool `json:"finished"`
+				Finished bool `json:"finished"`
 			} `json:"status"`
 		}{
-			{Status: struct {
-				Reason struct {
-					Short string `json:"short"`
-				} `json:"reason"`
-				Finished *bool `json:"finished"`
-			}{Finished: &finished}},
+			{
+				Home:   struct { Score int `json:"score"`; Winner bool `json:"winner"` }{Score: homeScore, Winner: homeID == winnerID},
+				Away:   struct { Score int `json:"score"`; Winner bool `json:"winner"` }{Score: awayScore, Winner: awayID == winnerID},
+				Status: struct { Finished bool `json:"finished"` }{Finished: true},
+			},
 		},
 	}
-	if penalties {
-		mu.Matches[0].Status.Reason.Short = "Pen"
-	}
-	return mu
 }
