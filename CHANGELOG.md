@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> [!NOTE]
+> Update your Golazo app with `golazo --update` and visit the new project website: https://thegolazo.app
+
 ### Added
-- **World Cup Bracket** — single-tab symmetric bracket covering all rounds (R32 → Final for 2026, R16 → Final for 2022); eliminates tab navigation, auto-updates with winner/loser styling as matches are played.
+- **World Cup Bracket** — Symmetric bracket covering all rounds (R32 → Final for 2026, R16 → Final for 2022); auto-updates with winner/loser styling as matches progress
 
 ### Changed
 
