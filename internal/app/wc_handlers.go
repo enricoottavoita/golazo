@@ -208,3 +208,13 @@ func (m model) handleWCUpcoming(msg wcUpcomingMsg) (tea.Model, tea.Cmd) {
 	m.wcUpcomingLastError = ""
 	return m, nil
 }
+
+// handleWCTopScorers processes the top scorers response and stores the data.
+func (m model) handleWCTopScorers(msg wcTopScorersMsg) (tea.Model, tea.Cmd) {
+	m.wcTopScorersLoading = false
+	if msg.err != nil {
+		return m, nil
+	}
+	m.wcTopScorers = msg.scorers
+	return m, nil
+}
