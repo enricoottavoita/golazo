@@ -109,7 +109,7 @@ func renderBracketRound(round api.WCKnockoutRound, width int) []string {
 			mu2 := mus[i+1]
 			mu2Line := renderBracketLineRaw(mu2, false)
 
-			// Connector: ──╮ / ├─► next / ──╯
+			// Connector: ──╮ / ├─ next / ──╯
 			winnerLabel := ""
 			if mu1.WinnerID != nil && mu2.WinnerID != nil {
 				w1 := nextRoundTeamName(mu1)

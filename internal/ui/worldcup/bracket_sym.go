@@ -69,28 +69,27 @@ func symRound(rounds []api.WCKnockoutRound, stage string) *api.WCKnockoutRound {
 //
 // Left half (outer → inner):
 //
-//	R32[0] compact ──► R16[0] home ─┐
+//	R32[0] compact  R16[0] home ─┐
 //	                    [indent] ├─ QF[0] top ─┐
-//	R32[1] compact ──► R16[0] away ─┘    sfMid │
+//	R32[1] compact  R16[0] away ─┘    sfMid │
 //	                    [sfSp] ├─ SF[0] top → Final
-//	R32[2] compact ──► R16[1] home ─┐    sfMid │
+//	R32[2] compact  R16[1] home ─┐    sfMid │
 //	... (mirrored bottom half)
 //
 // Right half is the mirror: SF ← QF ← R16 ← R32 compact.
 func sym5Level(r32, r16, qf, sf, fin []api.WCMatchup, wcData *api.WorldCupData) string {
 	const r32ColW = 20 // fixed visual width for the R32 compact column (padded to align)
-	const r32ArmW = 5  // " ──► "
 
-	// r32SlotL renders one R32 match padded to r32ColW, then the arm connector.
+	// r32SlotL renders one R32 match padded to r32ColW.
 	r32SlotL := func(i int) string {
 		comp := symCompact(symGet(r32, i))
 		w := lipgloss.Width(comp)
 		if w < r32ColW {
 			comp += strings.Repeat(" ", r32ColW-w)
 		}
-		return comp + ConnectorStyle.Render(" ──► ")
+		return comp
 	}
-	r32BlankL := strings.Repeat(" ", r32ColW+r32ArmW)
+	r32BlankL := strings.Repeat(" ", r32ColW)
 
 	// r32SlotR appends an R32 match after the R16 label on the right half.
 	r32SlotR := func(i int) string {
