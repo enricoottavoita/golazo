@@ -129,6 +129,25 @@ func TestHandleWCTopScorers_StoresScorers(t *testing.T) {
 	}
 }
 
+func TestHandleWCGroupsKeys_SEmitsTopScorersCmd(t *testing.T) {
+	m := newWCTestModel()
+	m.wcSubView = wcSubViewGroups
+
+	_, cmd := m.handleWCGroupsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if cmd == nil {
+		t.Error("expected non-nil tea.Cmd after pressing s (top scorers fetch)")
+	}
+}
+
+func TestHandleWCGroupGridKeys_SEmitsTopScorersCmd(t *testing.T) {
+	m := newWCTestModel()
+
+	_, cmd := m.handleWCGroupGridKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if cmd == nil {
+		t.Error("expected non-nil tea.Cmd after pressing s (top scorers fetch)")
+	}
+}
+
 func TestHandleWCTopScorers_ErrorClearsLoading(t *testing.T) {
 	m := newWCTestModel()
 	m.wcTopScorersLoading = true
