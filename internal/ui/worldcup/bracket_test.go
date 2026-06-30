@@ -79,6 +79,65 @@ func TestRenderBracketRound_ConnectorAlignment(t *testing.T) {
 
 func intPtrLocal(i int) *int { return &i }
 
+func TestPenSuffix(t *testing.T) {
+	cases := []struct {
+		name string
+		mu   api.WCMatchup
+		want string // substring expected in output (empty = expect empty string)
+	}{
+		{"no penalty", api.WCMatchup{}, ""},
+		{"flag only", api.WCMatchup{IsPenalties: true}, "p"},
+		{"with scores", api.WCMatchup{IsPenalties: true, HomePenScore: intPtrLocal(4), AwayPenScore: intPtrLocal(2)}, "(4-2p)"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := penSuffix(c.mu)
+			if c.want == "" {
+				if got != "" {
+					t.Errorf("penSuffix = %q, want empty", got)
+				}
+				return
+			}
+			if !strings.Contains(got, c.want) {
+				t.Errorf("penSuffix = %q, want it to contain %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestSymCompact_PenaltyScore(t *testing.T) {
+	winner := 200
+	mu := api.WCMatchup{
+		HomeTeam: "Germany", HomeTeamID: 100, HomeShort: "GER",
+		AwayTeam: "Paraguay", AwayTeamID: 200, AwayShort: "PAR",
+		HomeScore: intPtrLocal(1), AwayScore: intPtrLocal(1),
+		WinnerID: &winner, IsPenalties: true,
+		HomePenScore: intPtrLocal(3), AwayPenScore: intPtrLocal(5),
+	}
+	got := symCompact(mu)
+	if !strings.Contains(got, "(3-5p)") {
+		t.Errorf("symCompact output %q does not contain (3-5p)", got)
+	}
+	if strings.Contains(got, "p)") && !strings.Contains(got, "(3-5p)") {
+		t.Errorf("symCompact output contains bare 'p)' instead of full penalty score")
+	}
+}
+
+func TestRenderBracketLineRaw_PenaltyScore(t *testing.T) {
+	winner := 200
+	mu := api.WCMatchup{
+		HomeTeam: "Germany", HomeTeamID: 100, HomeShort: "GER",
+		AwayTeam: "Paraguay", AwayTeamID: 200, AwayShort: "PAR",
+		HomeScore: intPtrLocal(1), AwayScore: intPtrLocal(1),
+		WinnerID: &winner, IsPenalties: true,
+		HomePenScore: intPtrLocal(3), AwayPenScore: intPtrLocal(5),
+	}
+	got := renderBracketLineRaw(mu, true)
+	if !strings.Contains(got, "(3-5p)") {
+		t.Errorf("renderBracketLineRaw output %q does not contain (3-5p)", got)
+	}
+}
+
 // TestRenderBracketLineRaw_WidthInvariant locks in the fix for #158: bracket
 // match lines must render at the same total visual width regardless of which
 // flag form (regional-indicator pair, tag-sequence subdivision, or no-flag

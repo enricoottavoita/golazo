@@ -69,6 +69,7 @@ type wcMatchupRaw struct {
 	AwayTeam          string `json:"awayTeam"`
 	AwayTeamID        int    `json:"awayTeamId"`
 	AwayTeamShortName string `json:"awayTeamShortName"`
+	Winner            int    `json:"winner"`
 	TBDTeam1          bool   `json:"tbdTeam1"`
 	TBDTeam2          bool   `json:"tbdTeam2"`
 	Matches           []struct {
@@ -82,6 +83,9 @@ type wcMatchupRaw struct {
 		} `json:"away"`
 		Status struct {
 			Finished bool `json:"finished"`
+			Reason   struct {
+				ShortKey string `json:"shortKey"`
+			} `json:"reason"`
 		} `json:"status"`
 	} `json:"matches"`
 }
@@ -306,17 +310,23 @@ func convertMatchup(r wcMatchupRaw) api.WCMatchup {
 	}
 
 	if len(r.Matches) > 0 && r.Matches[0].Status.Finished {
-		m.HomeScore = intPtr(r.Matches[0].Home.Score)
-		m.AwayScore = intPtr(r.Matches[0].Away.Score)
+		match := r.Matches[0]
+		m.HomeScore = intPtr(match.Home.Score)
+		m.AwayScore = intPtr(match.Away.Score)
 
-		if r.Matches[0].Home.Winner {
+		if match.Home.Winner {
 			m.WinnerID = intPtr(r.HomeTeamID)
-		} else if r.Matches[0].Away.Winner {
+		} else if match.Away.Winner {
 			m.WinnerID = intPtr(r.AwayTeamID)
+		} else if r.Winner != 0 {
+			// FotMob bracket uses a matchup-level "winner" field for penalty results
+			// where per-team winner flags are both false
+			m.WinnerID = intPtr(r.Winner)
 		}
 
-		// Detect penalties: scores level at final whistle but there's a winner
-		if m.WinnerID != nil && *m.HomeScore == *m.AwayScore {
+		// penalties: detected via FotMob's reason shortKey or tied score with a winner
+		if match.Status.Reason.ShortKey == "penalties_short" ||
+			(m.WinnerID != nil && *m.HomeScore == *m.AwayScore) {
 			m.IsPenalties = true
 		}
 	}
