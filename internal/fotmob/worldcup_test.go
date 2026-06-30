@@ -244,35 +244,36 @@ func TestConvertMatchup_Penalties(t *testing.T) {
 }
 
 func TestConvertMatchup_PenaltyWinnerFallback(t *testing.T) {
-	// Simulates the case where FotMob omits Home.Winner/Away.Winner but provides
-	// a matchup-level WinnerID (e.g. Germany 1-1 Paraguay, Paraguay wins on pens).
+	// Simulates the actual FotMob bracket shape for GER 1-1 PAR (Paraguay wins on pens):
+	// both team-level winner flags are false; the matchup-level "winner" field carries the winner;
+	// status.reason.shortKey = "penalties_short" signals it was a penalty shootout.
 	raw := wcMatchupRaw{
 		HomeTeam:   "Germany",
 		HomeTeamID: 100,
 		AwayTeam:   "Paraguay",
 		AwayTeamID: 200,
-		WinnerID:   200,
+		Winner:     200,
 	}
 	var entry struct {
 		Home struct {
-			Score    int  `json:"score"`
-			PenScore int  `json:"penScore"`
-			Winner   bool `json:"winner"`
+			Score  int  `json:"score"`
+			Winner bool `json:"winner"`
 		} `json:"home"`
 		Away struct {
-			Score    int  `json:"score"`
-			PenScore int  `json:"penScore"`
-			Winner   bool `json:"winner"`
+			Score  int  `json:"score"`
+			Winner bool `json:"winner"`
 		} `json:"away"`
 		Status struct {
 			Finished bool `json:"finished"`
+			Reason   struct {
+				ShortKey string `json:"shortKey"`
+			} `json:"reason"`
 		} `json:"status"`
 	}
 	entry.Home.Score = 1
-	entry.Home.PenScore = 3
 	entry.Away.Score = 1
-	entry.Away.PenScore = 5
 	entry.Status.Finished = true
+	entry.Status.Reason.ShortKey = "penalties_short"
 	raw.Matches = append(raw.Matches, entry)
 	out := convertMatchup(raw)
 
@@ -281,12 +282,6 @@ func TestConvertMatchup_PenaltyWinnerFallback(t *testing.T) {
 	}
 	if !out.IsPenalties {
 		t.Error("IsPenalties = false, want true")
-	}
-	if out.HomePenScore == nil || *out.HomePenScore != 3 {
-		t.Errorf("HomePenScore = %v, want 3", out.HomePenScore)
-	}
-	if out.AwayPenScore == nil || *out.AwayPenScore != 5 {
-		t.Errorf("AwayPenScore = %v, want 5", out.AwayPenScore)
 	}
 }
 
@@ -430,28 +425,32 @@ func makeMockMatchup(homeID, awayID, homeScore, awayScore, winnerID int, _ bool)
 		HomeTeamID: homeID,
 		AwayTeam:   "Away",
 		AwayTeamID: awayID,
+		Winner:     winnerID,
 	}
-	r.Matches = r.Matches[:0:0] // ensure nil-like empty slice then append
 	var entry struct {
 		Home struct {
-			Score    int  `json:"score"`
-			PenScore int  `json:"penScore"`
-			Winner   bool `json:"winner"`
+			Score  int  `json:"score"`
+			Winner bool `json:"winner"`
 		} `json:"home"`
 		Away struct {
-			Score    int  `json:"score"`
-			PenScore int  `json:"penScore"`
-			Winner   bool `json:"winner"`
+			Score  int  `json:"score"`
+			Winner bool `json:"winner"`
 		} `json:"away"`
 		Status struct {
 			Finished bool `json:"finished"`
+			Reason   struct {
+				ShortKey string `json:"shortKey"`
+			} `json:"reason"`
 		} `json:"status"`
 	}
 	entry.Home.Score = homeScore
-	entry.Home.Winner = homeID == winnerID
+	entry.Home.Winner = homeID == winnerID && homeScore != awayScore
 	entry.Away.Score = awayScore
-	entry.Away.Winner = awayID == winnerID
+	entry.Away.Winner = awayID == winnerID && homeScore != awayScore
 	entry.Status.Finished = true
+	if homeScore == awayScore && winnerID != 0 {
+		entry.Status.Reason.ShortKey = "penalties_short"
+	}
 	r.Matches = append(r.Matches, entry)
 	return r
 }

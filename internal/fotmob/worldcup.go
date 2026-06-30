@@ -69,22 +69,23 @@ type wcMatchupRaw struct {
 	AwayTeam          string `json:"awayTeam"`
 	AwayTeamID        int    `json:"awayTeamId"`
 	AwayTeamShortName string `json:"awayTeamShortName"`
-	WinnerID          int    `json:"winnerId"`
+	Winner            int    `json:"winner"`
 	TBDTeam1          bool   `json:"tbdTeam1"`
 	TBDTeam2          bool   `json:"tbdTeam2"`
 	Matches           []struct {
 		Home struct {
-			Score    int  `json:"score"`
-			PenScore int  `json:"penScore"`
-			Winner   bool `json:"winner"`
+			Score  int  `json:"score"`
+			Winner bool `json:"winner"`
 		} `json:"home"`
 		Away struct {
-			Score    int  `json:"score"`
-			PenScore int  `json:"penScore"`
-			Winner   bool `json:"winner"`
+			Score  int  `json:"score"`
+			Winner bool `json:"winner"`
 		} `json:"away"`
 		Status struct {
 			Finished bool `json:"finished"`
+			Reason   struct {
+				ShortKey string `json:"shortKey"`
+			} `json:"reason"`
 		} `json:"status"`
 	} `json:"matches"`
 }
@@ -317,19 +318,16 @@ func convertMatchup(r wcMatchupRaw) api.WCMatchup {
 			m.WinnerID = intPtr(r.HomeTeamID)
 		} else if match.Away.Winner {
 			m.WinnerID = intPtr(r.AwayTeamID)
-		} else if r.WinnerID != 0 {
-			// fallback: FotMob bracket sometimes omits per-team winner flags
-			// and expresses the overall winner at the matchup level instead
-			m.WinnerID = intPtr(r.WinnerID)
+		} else if r.Winner != 0 {
+			// FotMob bracket uses a matchup-level "winner" field for penalty results
+			// where per-team winner flags are both false
+			m.WinnerID = intPtr(r.Winner)
 		}
 
-		// penalties: tied score at full time with a declared winner
-		if m.WinnerID != nil && *m.HomeScore == *m.AwayScore {
+		// penalties: detected via FotMob's reason shortKey or tied score with a winner
+		if match.Status.Reason.ShortKey == "penalties_short" ||
+			(m.WinnerID != nil && *m.HomeScore == *m.AwayScore) {
 			m.IsPenalties = true
-			if match.Home.PenScore != 0 || match.Away.PenScore != 0 {
-				m.HomePenScore = intPtr(match.Home.PenScore)
-				m.AwayPenScore = intPtr(match.Away.PenScore)
-			}
 		}
 	}
 
