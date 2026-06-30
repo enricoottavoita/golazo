@@ -198,8 +198,8 @@ func renderBracketLineRaw(mu api.WCMatchup, showArrow bool) string {
 		winnerLabel = MatchupTeamLabel(mu.AwayShort, mu.AwayTeam, mu.TBDAway)
 	}
 	penStr := ""
-	if mu.IsPenalties {
-		penStr = " " + PenStyle.Render("(p)")
+	if suf := penSuffix(mu); suf != "" {
+		penStr = " " + suf
 	}
 	winner := WinnerStyle.Render(winnerLabel) + penStr
 

@@ -317,6 +317,18 @@ func sym2Level(qf, sf, fin []api.WCMatchup, wcData *api.WorldCupData) string {
 	return symJoin(ll, rr, 7, centers)
 }
 
+// penSuffix returns the penalty annotation for a matchup score:
+// "(4-2p)" when both pen scores are known, "p" when only the flag is set, "" otherwise.
+func penSuffix(mu api.WCMatchup) string {
+	if mu.HomePenScore != nil && mu.AwayPenScore != nil {
+		return PenStyle.Render(fmt.Sprintf("(%d-%dp)", *mu.HomePenScore, *mu.AwayPenScore))
+	}
+	if mu.IsPenalties {
+		return PenStyle.Render("p")
+	}
+	return ""
+}
+
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 // symFinalLabel returns the center line label for the Final matchup.
@@ -329,9 +341,12 @@ func symFinalLabel(fin []api.WCMatchup, wcData *api.WorldCupData) string {
 		home := MatchupTeamLabel(mu.HomeShort, mu.HomeTeam, mu.TBDHome)
 		away := MatchupTeamLabel(mu.AwayShort, mu.AwayTeam, mu.TBDAway)
 		if mu.HomeScore != nil && mu.AwayScore != nil {
-			score := ScoreStyle.Render(fmt.Sprintf("%d–%d", *mu.HomeScore, *mu.AwayScore))
-			if mu.IsPenalties {
-				score += PenStyle.Render("p")
+			score := ScoreStyle.Render(fmt.Sprintf("%d–%d", *mu.HomeScore, *mu.AwayScore)) + penSuffix(mu)
+			if mu.WinnerID != nil {
+				if *mu.WinnerID == mu.HomeTeamID {
+					return WinnerStyle.Render(home) + " " + score + " " + EliminatedStyle.Render(away)
+				}
+				return EliminatedStyle.Render(home) + " " + score + " " + WinnerStyle.Render(away)
 			}
 			return WinnerStyle.Render(home) + " " + score + " " + WinnerStyle.Render(away)
 		}
@@ -460,10 +475,7 @@ func symCompact(mu api.WCMatchup) string {
 	}
 	var score string
 	if mu.HomeScore != nil && mu.AwayScore != nil {
-		score = ScoreStyle.Render(fmt.Sprintf("%d–%d", *mu.HomeScore, *mu.AwayScore))
-		if mu.IsPenalties {
-			score += PenStyle.Render("p")
-		}
+		score = ScoreStyle.Render(fmt.Sprintf("%d–%d", *mu.HomeScore, *mu.AwayScore)) + penSuffix(mu)
 	} else {
 		score = MatchLineStyle.Render("vs")
 	}
