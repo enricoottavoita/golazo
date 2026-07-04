@@ -115,7 +115,10 @@ Golazo supports **65+ leagues and competitions**. Customize your selection in Se
 | 🏆 | CONCACAF Nations League |
 | 🇲🇽 | Liga MX |
 | 🇺🇸 | MLS |
+| 🇺🇸 | USL Championship |
+| 🇺🇸 | USL League One |
 | 🇺🇸 | NWSL |
+| 🇺🇸 | USL Gainsbridge Super League |
 
 ## Middle East
 
