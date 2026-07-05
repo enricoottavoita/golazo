@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **New US Leagues** - USL Championship (USA Men's Division 2), USL League One (USA Men's Division 3), and USL Gainsbridge Super League (USA Women's Division 1) (Thanks @naviabbot!)
 
 ### Changed
 
