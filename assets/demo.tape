@@ -12,6 +12,7 @@ Enter
 Sleep 1.5s
 
 # Navigate list (5 matches)
+Right
 Down
 Sleep 1.5s
 Down
