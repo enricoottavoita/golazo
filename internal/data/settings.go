@@ -120,7 +120,10 @@ var AllSupportedLeagues = map[string][]LeagueInfo{
 		{ID: 246, Name: "Serie A", Country: "Ecuador"},
 		// North America
 		{ID: 130, Name: "MLS", Country: "USA"},
+		{ID: 8972, Name: "USL Championship", Country: "USA"},
+		{ID: 9296, Name: "USL League One", Country: "USA"},
 		{ID: 9134, Name: "NWSL", Country: "USA"},
+		{ID: 10699, Name: "USL Gainsbridge Super League", Country: "USA"},
 		{ID: 230, Name: "Liga MX", Country: "Mexico"},
 	},
 	RegionGlobal: {
